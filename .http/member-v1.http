@@ -1,0 +1,81 @@
+### 회원 가입
+POST http://localhost:8080/api/v1/members
+Content-Type: application/json
+
+{
+  "loginId": "testuser123",
+  "password": "Test1234!@",
+  "name": "홍길동",
+  "email": "test@example.com",
+  "birthDate": "1990-01-01"
+}
+
+### 회원 가입 - 중복된 loginId (409 CONFLICT)
+POST http://localhost:8080/api/v1/members
+Content-Type: application/json
+
+{
+  "loginId": "testuser123",
+  "password": "Test1234!@",
+  "name": "김철수",
+  "email": "another@example.com",
+  "birthDate": "1992-05-15"
+}
+
+### 회원 가입 - 잘못된 요청 (400 BAD_REQUEST)
+POST http://localhost:8080/api/v1/members
+Content-Type: application/json
+
+{
+  "loginId": "",
+  "password": "Test1234!@",
+  "name": "이영희",
+  "email": "invalid@example.com",
+  "birthDate": "1995-03-20"
+}
+
+### 내 정보 조회
+GET http://localhost:8080/api/v1/members/me
+X-LOGIN-ID: testuser123
+X-PASSWORD: Test1234!@
+
+### 내 정보 조회 - 잘못된 비밀번호 (401 UNAUTHORIZED)
+GET http://localhost:8080/api/v1/members/me
+X-LOGIN-ID: testuser123
+X-PASSWORD: WrongPassword123!
+
+### 내 정보 조회 - 인증 헤더 없음 (401 UNAUTHORIZED)
+GET http://localhost:8080/api/v1/members/me
+
+### 비밀번호 변경
+PATCH http://localhost:8080/api/v1/members/me/password
+Content-Type: application/json
+X-LOGIN-ID: testuser123
+X-PASSWORD: Test1234!@
+
+{
+  "currentPassword": "Test1234!@",
+  "newPassword": "NewTest1234!@"
+}
+
+### 비밀번호 변경 - 잘못된 현재 비밀번호 (401 UNAUTHORIZED)
+PATCH http://localhost:8080/api/v1/members/me/password
+Content-Type: application/json
+X-LOGIN-ID: testuser123
+X-PASSWORD: Test1234!@
+
+{
+  "currentPassword": "WrongPassword123!",
+  "newPassword": "NewTest1234!@"
+}
+
+### 비밀번호 재변경 (원래 비밀번호로 복구)
+PATCH http://localhost:8080/api/v1/members/me/password
+Content-Type: application/json
+X-LOGIN-ID: testuser123
+X-PASSWORD: NewTest1234!@
+
+{
+  "currentPassword": "NewTest1234!@",
+  "newPassword": "Test1234!@"
+}
