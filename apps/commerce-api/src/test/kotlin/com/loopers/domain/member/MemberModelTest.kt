@@ -345,6 +345,27 @@ class MemberModelTest {
             assertThat(member.password).isNotEqualTo(validPassword)
         }
 
+        @DisplayName("현재 비밀번호와 동일한 비밀번호로 변경하면, BAD_REQUEST 예외가 발생한다.")
+        @Test
+        fun throwsBadRequest_whenNewPasswordIsSameAsCurrent() {
+            // arrange
+            val member = MemberModel(
+                loginId = validLoginId,
+                password = validPassword,
+                name = validName,
+                birthday = validBirthday,
+                email = validEmail,
+            )
+
+            // act
+            val result = assertThrows<CoreException> {
+                member.changePassword(validPassword, validBirthday)
+            }
+
+            // assert
+            assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
+        }
+
         @DisplayName("새 비밀번호가 규칙에 맞지 않으면, BAD_REQUEST 예외가 발생한다.")
         @Test
         fun throwsBadRequest_whenNewPasswordIsInvalid() {

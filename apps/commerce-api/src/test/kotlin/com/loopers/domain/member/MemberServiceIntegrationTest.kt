@@ -208,6 +208,27 @@ class MemberServiceIntegrationTest @Autowired constructor(
             assertThat(member.matchesPassword(newPassword)).isTrue()
         }
 
+        @DisplayName("현재 비밀번호와 동일한 비밀번호로 변경하면, BAD_REQUEST 예외가 발생한다.")
+        @Test
+        fun throwsBadRequest_whenNewPasswordIsSameAsCurrent() {
+            // arrange
+            memberService.register(
+                loginId = validLoginId,
+                password = validPassword,
+                name = validName,
+                birthday = validBirthday,
+                email = validEmail,
+            )
+
+            // act
+            val result = assertThrows<CoreException> {
+                memberService.changePassword(validLoginId, validPassword)
+            }
+
+            // assert
+            assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
+        }
+
         @DisplayName("존재하지 않는 회원의 비밀번호를 변경하면, NOT_FOUND 예외가 발생한다.")
         @Test
         fun throwsNotFound_whenMemberDoesNotExist() {
