@@ -1,6 +1,5 @@
 package com.loopers.interfaces.api
 
-import com.loopers.domain.member.MemberModel
 import com.loopers.infrastructure.member.MemberJpaRepository
 import com.loopers.interfaces.api.member.MemberV1Dto
 import com.loopers.utils.DatabaseCleanUp
