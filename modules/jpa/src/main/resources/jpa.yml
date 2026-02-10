@@ -19,7 +19,7 @@ datasource:
       username: ${MYSQL_USER}
       password: "${MYSQL_PWD}"
       pool-name: mysql-main-pool
-      maximum-pool-size: 40
+      maximum-pool-size: 50
       minimum-idle: 30
       connection-timeout: 3000 # 커넥션 획득 대기시간(ms) ( default: 3000 = 3sec )
       validation-timeout: 5000 # 커넥션 유효성 검사시간(ms) ( default: 5000 = 5sec )
