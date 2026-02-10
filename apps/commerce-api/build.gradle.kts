@@ -13,6 +13,10 @@ dependencies {
     // security
     implementation("org.springframework.security:spring-security-crypto")
 
+    // cache
+    implementation("org.springframework.boot:spring-boot-starter-cache")
+    implementation("com.github.ben-manes.caffeine:caffeine")
+
     // web
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
