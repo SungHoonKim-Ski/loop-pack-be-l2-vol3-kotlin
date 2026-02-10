@@ -34,7 +34,7 @@ class MemberModel(
     var birthday: LocalDate = birthday
         protected set
 
-    @Column(name = "email", nullable = false)
+    @Column(name = "email", nullable = false, unique = true)
     var email: String = email
         protected set
 

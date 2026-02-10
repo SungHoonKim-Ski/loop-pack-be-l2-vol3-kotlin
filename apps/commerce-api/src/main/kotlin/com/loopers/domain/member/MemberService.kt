@@ -21,10 +21,6 @@ class MemberService(
         birthday: LocalDate,
         email: String,
     ) {
-        if (memberRepository.existsByLoginId(loginId)) {
-            throw CoreException(ErrorType.CONFLICT, "이미 존재하는 로그인 ID입니다.")
-        }
-
         MemberModel.validatePassword(password, birthday)
 
         val member = MemberModel(
