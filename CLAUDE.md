@@ -3,7 +3,8 @@
 ## 프로젝트 개요
 
 **프로젝트명**: Loopers Kotlin Spring Template
-**목적**: Spring Boot 기반의 멀티모듈 코틀린 템플릿 프로젝트
+**목적**: Spring Boot 기반의 멀티모듈 코틀린 커머스 템플릿 프로젝트
+**성능 목표**: 10,000 TPS (피크 기준, 단계적 달성)
 
 Loopers에서 제공하는 스프링 코틀린 템플릿 프로젝트입니다. 프로젝트 안정성 및 유지보수성을 위해 pre-commit 훅을 통한 ktlint 검사를 운용하고 있습니다.
 
@@ -42,6 +43,20 @@ docker-compose -f ./docker/monitoring-compose.yml up
 | Kafka | 3.5.1 |
 | SpringDoc OpenAPI | 2.7.0 |
 
+## 현재 인프라 상태
+
+| 인프라 | 상태 | 비고 |
+|--------|------|------|
+| MySQL | 단일 DB | Read/Write 분리 미적용 |
+| Redis | 모듈 존재, 미사용 | 캐싱 레이어 미적용 |
+| Kafka | 구성 완료 | Streamer 앱에서 소비 |
+
+## 인증 방식
+
+JWT를 사용하지 않는다 (의도적 결정). 유저 정보가 필요한 모든 요청은 아래 헤더를 통해 인증한다:
+- `X-Loopers-LoginId` : 로그인 ID
+- `X-Loopers-LoginPw` : 비밀번호
+
 ## 모듈 구조
 
 본 프로젝트는 멀티 모듈 프로젝트로 구성되어 있으며, 각 모듈의 위계 및 역할을 분명히 합니다.
@@ -53,24 +68,42 @@ docker-compose -f ./docker/monitoring-compose.yml up
 
 ### 디렉토리 구조
 ```
-├── apps/                    # 실행 가능한 Spring Boot 애플리케이션
-│   ├── commerce-api         # REST API 애플리케이션
-│   ├── commerce-batch       # 배치 처리 애플리케이션
-│   └── commerce-streamer    # Kafka 스트리밍 애플리케이션
+├── apps/                        # 실행 가능한 Spring Boot 애플리케이션
+│   ├── commerce-api/            # REST API 애플리케이션
+│   │   └── src/main/kotlin/com/loopers/
+│   │       ├── interfaces/api/  # REST 컨트롤러, DTO, ApiSpec
+│   │       │   ├── example/     # (템플릿) 예시 도메인 API
+│   │       │   └── member/      # 회원 도메인 API
+│   │       ├── application/     # Facade (유스케이스 조합), Info DTO
+│   │       ├── domain/          # 도메인 모델, Service, Repository 인터페이스
+│   │       ├── infrastructure/  # Repository 구현체, JPA Repository
+│   │       ├── config/          # 앱 레벨 설정
+│   │       └── support/         # 에러 핸들링 (ErrorType, CoreException)
+│   ├── commerce-batch/          # 배치 처리 애플리케이션
+│   └── commerce-streamer/       # Kafka 스트리밍 애플리케이션
 │
-├── modules/                 # 재사용 가능한 모듈
-│   ├── jpa                  # JPA/Hibernate & QueryDSL 설정
-│   ├── redis                # Redis 설정 (Master-Replica)
-│   └── kafka                # Kafka 설정
+├── modules/                     # 재사용 가능한 인프라 모듈
+│   ├── jpa/                     # JPA/Hibernate & QueryDSL, DataSource
+│   ├── redis/                   # Redis (Master-Replica) 설정
+│   └── kafka/                   # Kafka Producer/Consumer 설정
 │
-├── supports/                # 지원 모듈
-│   ├── jackson              # Jackson 설정
-│   ├── logging              # 로깅 설정 (Logback, Slack)
-│   └── monitoring           # Prometheus & Micrometer 모니터링
+├── supports/                    # 지원 모듈
+│   ├── jackson/                 # Jackson 직렬화 설정
+│   ├── logging/                 # 로깅 설정 (Logback, Slack)
+│   └── monitoring/              # Prometheus & Micrometer 모니터링
 │
-└── docker/                  # 인프라 Docker Compose
-    ├── infra-compose.yml    # MySQL, Redis, Kafka
-    └── monitoring-compose.yml # Grafana & Prometheus
+└── docker/                      # 인프라 Docker Compose
+    ├── infra-compose.yml        # MySQL, Redis, Kafka
+    └── monitoring-compose.yml   # Grafana & Prometheus
+```
+
+### 새 도메인 추가 시 확장 패턴
+example 패키지를 참고하여 다음 4개 패키지에 동일한 구조로 확장한다:
+```
+interfaces/api/{domain}/    → Controller, ApiSpec, Dto
+application/{domain}/       → Facade, Info
+domain/{domain}/            → Model(Entity), Service, Repository(interface), Command
+infrastructure/{domain}/    → RepositoryImpl, JpaRepository
 ```
 
 ## 주요 의존성
@@ -80,6 +113,7 @@ docker-compose -f ./docker/monitoring-compose.yml up
 - **Cache**: spring-boot-starter-data-redis
 - **Messaging**: spring-kafka
 - **Batch**: spring-boot-starter-batch
+- **Security**: spring-security-crypto
 - **Monitoring**: micrometer-registry-prometheus, micrometer-tracing-bridge-brave
 - **Testing**: JUnit 5, MockK, Mockito, TestContainers
 
@@ -110,12 +144,50 @@ docker-compose -f ./docker/monitoring-compose.yml up
 
 ```
 com.loopers
-├── interfaces.api           # REST 컨트롤러
-├── application              # 비즈니스 로직/파사드
-├── domain                   # 도메인 모델
-├── infrastructure           # 리포지토리 구현
+├── interfaces.api           # REST 컨트롤러, DTO, ApiSpec
+├── application              # Facade (유스케이스 조합), Info DTO
+├── domain                   # 도메인 모델(Entity), Service, Repository 인터페이스, Command
+├── infrastructure           # Repository 구현체, JPA Repository
+├── config                   # 앱 레벨 설정
 └── support                  # 에러 핸들링, 유틸리티
 ```
+
+## 10K TPS 로드맵
+
+현재 → 목표까지 단계적으로 적용한다. 각 단계는 이전 단계에 의존하지 않으며 독립적으로 적용 가능하다.
+
+### Phase 1: 즉시 적용 (코드 변경 최소) ✅
+| 항목 | 현재 | 목표 | 상태 |
+|------|------|------|------|
+| Virtual Threads | 미적용 | `spring.threads.virtual.enabled=true` | DONE |
+| Tomcat 튜닝 | max-threads=200, max-connections=8192 | max-connections=10000, accept-count=200 | DONE |
+| DB 커넥션 풀 | max=40 | max=50 (단일 DB, Phase 2에서 R/W 분리 시 확장) | DONE |
+| 회원가입 중복체크 | findByLoginId + findByEmail (2회 조회) | Unique Constraint + Facade에서 DataIntegrityViolationException 처리 | DONE |
+| 인증 헤더 통일 | X-LOGIN-ID / X-PASSWORD | X-Loopers-LoginId / X-Loopers-LoginPw + Interceptor + ArgumentResolver | DONE |
+
+### Phase 2: 캐싱 및 인프라 확장
+| 항목 | 현재 | 목표 | 상태 |
+|------|------|------|------|
+| 인증 BCrypt 캐싱 | 매 요청 BCrypt 호출 | Caffeine 로컬 캐시 (auth-cache, TTL 5분, max 10K) + SHA256 비교 | DONE |
+| 비밀번호 변경 시 캐시 eviction | 미적용 | MemberFacade에서 loginId 기반 evict | DONE |
+| DB Read/Write 분리 | 단일 DB | AbstractRoutingDataSource + Replica | TODO (보류) |
+| Redis 캐싱 도입 | 미사용 | Spring Cache Abstraction으로 향후 전환 가능 | TODO (보류) |
+| Lettuce 커넥션 풀링 | 단일 커넥션 멀티플렉싱 | LettucePoolingClientConfiguration | TODO (보류) |
+
+### Phase 3: 안정성 강화
+| 항목 | 현재 | 목표 | 상태 |
+|------|------|------|------|
+| Circuit Breaker | 없음 | Resilience4j | TODO |
+| Rate Limiting | 없음 | API 레벨 제한 | TODO |
+| Graceful Degradation | 없음 | 폴백 패턴 | TODO |
+
+## 아키텍처 원칙 (확장 시 준수)
+
+- `@Transactional(readOnly = true)` 를 읽기 메서드에 반드시 명시 → 향후 Read Replica 라우팅 자동 대응
+- `synchronized` 대신 `ReentrantLock` → Virtual Thread pinning 방지
+- 사전 조회로 중복 체크하지 않음 → DB Unique Constraint + 예외 처리
+- 매 요청 CPU-intensive 연산 반복 금지 → 캐싱 레이어 도입 시 자연스럽게 해소
+- 도메인 간 결합 최소화 → 향후 서비스 분리 대비
 
 ## 개발 규칙
 
@@ -147,6 +219,8 @@ com.loopers
 - 실제 동작하지 않는 코드, 불필요한 Mock 데이터를 이용한 구현을 하지 말 것
 - null-safety 하지 않게 코드 작성하지 말 것 (Java의 경우, Optional을 활용할 것)
 - println 코드 남기지 말 것
+- 매 요청마다 BCrypt 등 CPU-intensive 연산을 반복하지 말 것
+- 사전 조회로 중복 체크하지 말 것 (DB Unique Constraint 활용)
 
 #### 2. Recommendation
 - 실제 API를 호출해 확인하는 E2E 테스트 코드 작성
@@ -159,6 +233,7 @@ com.loopers
 2. null-safety, thread-safety 고려
 3. 테스트 가능한 구조로 설계
 4. 기존 코드 패턴 분석 후 일관성 유지
+5. 10K TPS 성능 목표에 부합하는 구현
 
 ## agent_todo
 
@@ -167,6 +242,9 @@ com.loopers
 - 추천 운영 방식(스펙/구현/테스트 분리, 독립 모듈 병렬·공유 자원 순차, 부분 테스트 → 전체 테스트)을 기본으로 따른다.
 - 관련 테스트를 선택적으로 실행하고, 미실행 시 이유를 명시한다.
 - `user_todo`가 지켜지지 않으면 준수를 요청한다. 단, 사용자가 `ignore_user_todo` 명령을 명시하면 해당 요청에 한해 무시한다.
+- 새 도메인 추가 시 example 패키지 구조를 참고하여 4-layer 구조를 유지한다.
+- 성능에 영향을 주는 변경은 아키텍처 원칙 및 로드맵과의 일관성을 확인한다.
+- 개발자가 반복적으로 언급하는 대원칙이나 요구사항이 있다면, 이를 CLAUDE.md에 반영하여 이후 세션에서도 일관되게 적용되도록 한다.
 
 ## user_todo
 
