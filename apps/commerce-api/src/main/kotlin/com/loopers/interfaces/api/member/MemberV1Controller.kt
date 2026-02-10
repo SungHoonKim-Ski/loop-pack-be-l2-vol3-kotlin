@@ -1,15 +1,14 @@
 package com.loopers.interfaces.api.member
 
 import com.loopers.application.member.MemberFacade
+import com.loopers.config.auth.Authenticated
+import com.loopers.config.auth.AuthenticatedMember
 import com.loopers.interfaces.api.ApiResponse
-import com.loopers.support.error.CoreException
-import com.loopers.support.error.ErrorType
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
@@ -29,33 +28,24 @@ class MemberV1Controller(
             .let { ApiResponse.success(it) }
     }
 
+    @Authenticated
     @GetMapping("/me")
     override fun getMe(
-        @RequestHeader(value = "X-LOGIN-ID", required = false) loginId: String?,
-        @RequestHeader(value = "X-PASSWORD", required = false) password: String?,
+        authenticatedMember: AuthenticatedMember,
     ): ApiResponse<MemberV1Dto.MemberResponse> {
-        if (loginId == null || password == null) {
-            throw CoreException(ErrorType.UNAUTHORIZED, "인증 정보가 없습니다.")
-        }
-
-        return memberFacade.getMember(loginId, password)
+        return memberFacade.getMember(authenticatedMember.id)
             .let { MemberV1Dto.MemberResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
 
+    @Authenticated
     @PatchMapping("/me/password")
     override fun changePassword(
-        @RequestHeader(value = "X-LOGIN-ID", required = false) loginId: String?,
-        @RequestHeader(value = "X-PASSWORD", required = false) password: String?,
+        authenticatedMember: AuthenticatedMember,
         @RequestBody request: MemberV1Dto.ChangePasswordRequest,
     ): ApiResponse<MemberV1Dto.MemberResponse> {
-        if (loginId == null || password == null) {
-            throw CoreException(ErrorType.UNAUTHORIZED, "인증 정보가 없습니다.")
-        }
-
         return memberFacade.changePassword(
-            loginId = loginId,
-            authPassword = password,
+            memberId = authenticatedMember.id,
             currentPassword = request.currentPassword,
             newPassword = request.newPassword,
         )

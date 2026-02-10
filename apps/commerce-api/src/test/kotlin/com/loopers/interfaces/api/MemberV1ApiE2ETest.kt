@@ -143,8 +143,8 @@ class MemberV1ApiE2ETest @Autowired constructor(
             memberJpaRepository.save(member)
 
             val headers = HttpHeaders().apply {
-                set("X-LOGIN-ID", "testuser123")
-                set("X-PASSWORD", "Test1234!@")
+                set("X-Loopers-LoginId", "testuser123")
+                set("X-Loopers-LoginPw", "Test1234!@")
             }
 
             // act
@@ -181,8 +181,8 @@ class MemberV1ApiE2ETest @Autowired constructor(
             memberJpaRepository.save(member)
 
             val headers = HttpHeaders().apply {
-                set("X-LOGIN-ID", "testuser123")
-                set("X-PASSWORD", "WrongPassword123!")
+                set("X-Loopers-LoginId", "testuser123")
+                set("X-Loopers-LoginPw", "WrongPassword123!")
             }
 
             // act
@@ -234,8 +234,8 @@ class MemberV1ApiE2ETest @Autowired constructor(
             memberJpaRepository.save(member)
 
             val headers = HttpHeaders().apply {
-                set("X-LOGIN-ID", "testuser123")
-                set("X-PASSWORD", "Test1234!@")
+                set("X-Loopers-LoginId", "testuser123")
+                set("X-Loopers-LoginPw", "Test1234!@")
             }
 
             val request = MemberV1Dto.ChangePasswordRequest(
@@ -275,8 +275,8 @@ class MemberV1ApiE2ETest @Autowired constructor(
             memberJpaRepository.save(member)
 
             val headers = HttpHeaders().apply {
-                set("X-LOGIN-ID", "testuser123")
-                set("X-PASSWORD", "Test1234!@")
+                set("X-Loopers-LoginId", "testuser123")
+                set("X-Loopers-LoginPw", "Test1234!@")
             }
 
             val request = MemberV1Dto.ChangePasswordRequest(
