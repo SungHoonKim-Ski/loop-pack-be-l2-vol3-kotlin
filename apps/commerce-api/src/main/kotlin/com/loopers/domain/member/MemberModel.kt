@@ -29,7 +29,7 @@ class MemberModel(
     var name: String = name
         protected set
 
-    @Column(name = "email", nullable = false)
+    @Column(name = "email", nullable = false, unique = true)
     var email: String = email
         protected set
 

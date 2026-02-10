@@ -13,16 +13,6 @@ class MemberService(
 ) {
     @Transactional
     fun register(command: MemberRegisterCommand): MemberModel {
-        // 중복 체크
-        memberRepository.findByLoginId(command.loginId)?.let {
-            throw CoreException(ErrorType.CONFLICT, "이미 사용 중인 로그인 ID입니다.")
-        }
-
-        memberRepository.findByEmail(command.email)?.let {
-            throw CoreException(ErrorType.CONFLICT, "이미 사용 중인 이메일입니다.")
-        }
-
-        // 평문으로 MemberModel 생성 후 encryptPassword 호출
         val member = MemberModel(
             loginId = command.loginId,
             password = command.password,

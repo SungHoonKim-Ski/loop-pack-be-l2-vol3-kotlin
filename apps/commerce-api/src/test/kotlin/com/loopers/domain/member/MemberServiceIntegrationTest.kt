@@ -4,6 +4,7 @@ import com.loopers.IntegrationTestBase
 import com.loopers.infrastructure.member.MemberJpaRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import org.springframework.dao.DataIntegrityViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -50,9 +51,9 @@ class MemberServiceIntegrationTest @Autowired constructor(
             )
         }
 
-        @DisplayName("중복된 loginId로 등록하면, CONFLICT 예외가 발생한다.")
+        @DisplayName("중복된 loginId로 등록하면, DataIntegrityViolationException이 발생한다.")
         @Test
-        fun throwsConflictException_whenDuplicateLoginIdIsProvided() {
+        fun throwsDataIntegrityViolationException_whenDuplicateLoginIdIsProvided() {
             // arrange
             val existingMember = MemberModel(
                 loginId = "testuser01",
@@ -72,18 +73,15 @@ class MemberServiceIntegrationTest @Autowired constructor(
                 birthDate = LocalDate.of(1995, 5, 5),
             )
 
-            // act
-            val exception = assertThrows<CoreException> {
+            // act & assert
+            assertThrows<DataIntegrityViolationException> {
                 memberService.register(command)
             }
-
-            // assert
-            assertThat(exception.errorType).isEqualTo(ErrorType.CONFLICT)
         }
 
-        @DisplayName("중복된 email로 등록하면, CONFLICT 예외가 발생한다.")
+        @DisplayName("중복된 email로 등록하면, DataIntegrityViolationException이 발생한다.")
         @Test
-        fun throwsConflictException_whenDuplicateEmailIsProvided() {
+        fun throwsDataIntegrityViolationException_whenDuplicateEmailIsProvided() {
             // arrange
             val existingMember = MemberModel(
                 loginId = "testuser01",
@@ -103,13 +101,10 @@ class MemberServiceIntegrationTest @Autowired constructor(
                 birthDate = LocalDate.of(1995, 5, 5),
             )
 
-            // act
-            val exception = assertThrows<CoreException> {
+            // act & assert
+            assertThrows<DataIntegrityViolationException> {
                 memberService.register(command)
             }
-
-            // assert
-            assertThat(exception.errorType).isEqualTo(ErrorType.CONFLICT)
         }
     }
 
