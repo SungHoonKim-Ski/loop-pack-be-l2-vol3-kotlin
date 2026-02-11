@@ -2,8 +2,11 @@ package com.loopers.config.auth
 
 import com.loopers.config.cache.CacheConfig
 import com.loopers.config.cache.CachedAuth
+import com.loopers.domain.common.vo.Email
 import com.loopers.domain.member.MemberModel
 import com.loopers.domain.member.MemberService
+import com.loopers.domain.member.vo.LoginId
+import com.loopers.domain.member.vo.MemberName
 import com.loopers.support.error.CoreException
 import io.mockk.every
 import io.mockk.verify
@@ -26,11 +29,11 @@ class AuthenticationInterceptorTest {
     private lateinit var cacheManager: CacheManager
 
     private val testMember = MemberModel(
-        loginId = "testuser01",
-        password = "TestPass123!",
-        name = "홍길동",
-        email = "test@example.com",
-        birthDate = LocalDate.of(1990, 1, 1),
+        loginId = LoginId.of("testuser01"),
+        encodedPassword = "TestPass123!",
+        name = MemberName.of("홍길동"),
+        email = Email.of("test@example.com"),
+        birthday = LocalDate.of(1990, 1, 1),
     ).apply {
         // ID를 리플렉션으로 설정 (테스트용)
         val idField = this::class.java.superclass.getDeclaredField("id")

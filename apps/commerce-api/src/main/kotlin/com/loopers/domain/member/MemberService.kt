@@ -1,5 +1,9 @@
 package com.loopers.domain.member
 
+import com.loopers.domain.common.vo.Email
+import com.loopers.domain.member.vo.LoginId
+import com.loopers.domain.member.vo.MemberName
+import com.loopers.domain.member.vo.RawPassword
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import org.springframework.dao.DataIntegrityViolationException
@@ -21,14 +25,14 @@ class MemberService(
         birthday: LocalDate,
         email: String,
     ) {
-        MemberModel.validatePassword(password, birthday)
+        RawPassword.validate(password, birthday)
 
         val member = MemberModel(
-            loginId = loginId,
+            loginId = LoginId.of(loginId),
             encodedPassword = passwordEncoder.encode(password),
-            name = name,
+            name = MemberName.of(name),
             birthday = birthday,
-            email = email,
+            email = Email.of(email),
         )
         try {
             memberRepository.save(member)
@@ -68,7 +72,7 @@ class MemberService(
             throw CoreException(ErrorType.BAD_REQUEST, "현재 비밀번호와 동일한 비밀번호로 변경할 수 없습니다.")
         }
 
-        MemberModel.validatePassword(newPassword, member.birthday)
+        RawPassword.validate(newPassword, member.birthday)
         member.changePassword(passwordEncoder.encode(newPassword))
     }
 }
