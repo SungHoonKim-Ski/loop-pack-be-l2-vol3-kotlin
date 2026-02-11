@@ -1,4 +1,4 @@
-package com.loopers.domain.member.vo
+package com.loopers.domain.member
 
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType

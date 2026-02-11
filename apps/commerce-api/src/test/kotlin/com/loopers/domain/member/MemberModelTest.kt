@@ -3,7 +3,6 @@ package com.loopers.domain.member
 import com.loopers.domain.common.vo.Email
 import com.loopers.domain.member.vo.LoginId
 import com.loopers.domain.member.vo.MemberName
-import com.loopers.domain.member.vo.RawPassword
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import org.assertj.core.api.Assertions.assertThat

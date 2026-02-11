@@ -211,7 +211,7 @@ com.loopers
 | Repository 쿼리 | 파라미터는 primitive 유지 (findByLoginId(String)) |
 | VO 대상 | 도메인 검증 규칙이 있는 필드 (regex, 범위, 형식) |
 | VO 비대상 | id, LocalDate, ZonedDateTime, Enum, Boolean |
-| Password | `object RawPassword`로 분리 (저장 안 되므로 value class 아님) |
+| Password | `object RawPassword`로 `domain/{domain}/`에 배치 (저장 안 되므로 value class 아님, VO 아님) |
 | Facade/Controller | primitive 유지 (VO 노출하지 않음) |
 
 ## 개발 규칙
