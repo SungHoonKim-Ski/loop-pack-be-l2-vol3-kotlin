@@ -53,9 +53,12 @@ docker-compose -f ./docker/monitoring-compose.yml up
 
 ## 인증 방식
 
-JWT를 사용하지 않는다 (의도적 결정). 유저 정보가 필요한 모든 요청은 아래 헤더를 통해 인증한다:
-- `X-Loopers-LoginId` : 로그인 ID
-- `X-Loopers-LoginPw` : 비밀번호
+JWT를 사용하지 않는다 (의도적 결정).
+
+| 구분 | 헤더 | 적용 방식 |
+|------|------|-----------|
+| 대고객 | `X-Loopers-LoginId` + `X-Loopers-LoginPw` | `@Authenticated` 어노테이션 선택 적용 (비인증 API와 혼재) |
+| 어드민 | `X-Loopers-Ldap: loopers.admin` | `/api-admin/**` 경로 패턴 일괄 적용 (전 엔드포인트 필수) |
 
 ## 모듈 구조
 
@@ -100,11 +103,14 @@ JWT를 사용하지 않는다 (의도적 결정). 유저 정보가 필요한 모
 ### 새 도메인 추가 시 확장 패턴
 example 패키지를 참고하여 다음 4개 패키지에 동일한 구조로 확장한다:
 ```
-interfaces/api/{domain}/    → Controller, ApiSpec, Dto
-application/{domain}/       → Facade, Info
-domain/{domain}/            → Model(Entity), Service, Repository(interface), Command
-infrastructure/{domain}/    → RepositoryImpl, JpaRepository
+interfaces/api/{domain}/        → Controller, ApiSpec, Dto
+interfaces/api/admin/{domain}/  → AdminController, AdminApiSpec, AdminDto
+application/{domain}/           → Facade, AdminFacade, Info
+domain/{domain}/                → Model(Entity), Service, Repository(interface), Command
+infrastructure/{domain}/        → RepositoryImpl, JpaRepository
 ```
+- **고객/어드민 Facade 분리**: Service는 공유, Facade만 분리. 전체 도메인에 일관 적용.
+- **고객/어드민 DTO 분리**: Controller 레벨에서 노출 필드 분리. Facade는 동일 Info 반환.
 
 ## 주요 의존성
 
@@ -187,7 +193,26 @@ com.loopers
 - `synchronized` 대신 `ReentrantLock` → Virtual Thread pinning 방지
 - 사전 조회로 중복 체크하지 않음 → DB Unique Constraint + 예외 처리
 - 매 요청 CPU-intensive 연산 반복 금지 → 캐싱 레이어 도입 시 자연스럽게 해소
-- 도메인 간 결합 최소화 → 향후 서비스 분리 대비
+- 도메인 간 결합 최소화 → 향후 서비스 분리 대비 (ID 참조, 물리 FK 미사용)
+- 도메인 모델이 자기 불변식 보호 → `deductStock()`, `validateOwner()`, `delete()` 등 비즈니스 규칙은 모델 내부
+- cross-domain 접근은 Facade 레벨에서만 조합 → Service 간 직접 참조 금지
+- Soft Delete: `status=DELETED` + `deleted_at` 병행 → `delete()` 메서드에서 동시 설정
+- 개발 순서: Phase 1 기능 정합성 → Phase 2 동시성/멱등성/일관성
+
+### Value Object (VO) 컨벤션
+
+| 규칙 | 설명 |
+|------|------|
+| 구현 방식 | `@JvmInline value class` (Hibernate 호환을 위해 `AttributeConverter` 미사용) |
+| 패키지 | 도메인별: `domain/{domain}/vo/`, 공통: `domain/common/vo/` |
+| 생성 경계 | Service 레이어에서 `VO.of()` 팩토리로 생성 |
+| 생성자 | 검증 없음 (DB 복원용). `of()`에서만 검증 |
+| Entity 필드 | 생성자는 VO 타입 수신, 내부 필드는 primitive 저장 (`var loginId: String = loginId.value`) |
+| Repository 쿼리 | 파라미터는 primitive 유지 (findByLoginId(String)) |
+| VO 대상 | 도메인 검증 규칙이 있는 필드 (regex, 범위, 형식) |
+| VO 비대상 | id, LocalDate, ZonedDateTime, Enum, Boolean |
+| Password | `object RawPassword`로 분리 (저장 안 되므로 value class 아님) |
+| Facade/Controller | primitive 유지 (VO 노출하지 않음) |
 
 ## 개발 규칙
 
@@ -245,6 +270,9 @@ com.loopers
 - 새 도메인 추가 시 example 패키지 구조를 참고하여 4-layer 구조를 유지한다.
 - 성능에 영향을 주는 변경은 아키텍처 원칙 및 로드맵과의 일관성을 확인한다.
 - 개발자가 반복적으로 언급하는 대원칙이나 요구사항이 있다면, 이를 CLAUDE.md에 반영하여 이후 세션에서도 일관되게 적용되도록 한다.
+- 새로운 요구사항이 확정되면 `REQUIREMENTS.md`에 추가한다 (REQ 번호, 배경, 수용 기준, 제약사항, 상태 포함).
+- 기술 판단(선택지 비교, 트레이드오프)이 발생하면 `DECISIONS.md`에 기록한다 (배경, 선택지, 판단, 근거, 트레이드오프 포함).
+- 요구사항 상태가 변경되면(TODO → DONE, 보류 등) `REQUIREMENTS.md`와 `CLAUDE.md` 로드맵을 함께 업데이트한다.
 
 ## user_todo
 
