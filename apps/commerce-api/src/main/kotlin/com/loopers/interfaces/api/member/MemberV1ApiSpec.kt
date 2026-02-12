@@ -1,8 +1,8 @@
 package com.loopers.interfaces.api.member
 
+import com.loopers.config.auth.AuthenticatedMember
 import com.loopers.interfaces.api.ApiResponse
 import io.swagger.v3.oas.annotations.Operation
-import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
 
 @Tag(name = "Member V1 API", description = "회원 API 입니다.")
@@ -20,10 +20,7 @@ interface MemberV1ApiSpec {
         description = "인증된 회원의 정보를 조회합니다.",
     )
     fun getMe(
-        @Parameter(description = "로그인 ID", required = true)
-        loginId: String?,
-        @Parameter(description = "로그인 비밀번호", required = true)
-        loginPw: String?,
+        authenticatedMember: AuthenticatedMember,
     ): ApiResponse<MemberV1Dto.MemberResponse>
 
     @Operation(
@@ -31,10 +28,7 @@ interface MemberV1ApiSpec {
         description = "인증된 회원의 비밀번호를 변경합니다.",
     )
     fun changePassword(
-        @Parameter(description = "로그인 ID", required = true)
-        loginId: String?,
-        @Parameter(description = "로그인 비밀번호", required = true)
-        loginPw: String?,
+        authenticatedMember: AuthenticatedMember,
         request: MemberV1Dto.ChangePasswordRequest,
     ): ApiResponse<Any>
 }

@@ -1,14 +1,13 @@
 package com.loopers.interfaces.api.member
 
 import com.loopers.application.member.MemberFacade
+import com.loopers.config.auth.Authenticated
+import com.loopers.config.auth.AuthenticatedMember
 import com.loopers.interfaces.api.ApiResponse
-import com.loopers.support.error.CoreException
-import com.loopers.support.error.ErrorType
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -31,29 +30,23 @@ class MemberV1Controller(
         return ApiResponse.success()
     }
 
+    @Authenticated
     @GetMapping("/me")
     override fun getMe(
-        @RequestHeader(value = "X-Loopers-LoginId", required = false) loginId: String?,
-        @RequestHeader(value = "X-Loopers-LoginPw", required = false) loginPw: String?,
+        authenticatedMember: AuthenticatedMember,
     ): ApiResponse<MemberV1Dto.MemberResponse> {
-        if (loginId.isNullOrBlank() || loginPw.isNullOrBlank()) {
-            throw CoreException(ErrorType.UNAUTHORIZED, "인증 헤더가 누락되었습니다.")
-        }
-        return memberFacade.getMyInfo(loginId, loginPw)
+        return memberFacade.getMyInfo(authenticatedMember.loginId)
             .let { MemberV1Dto.MemberResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
 
+    @Authenticated
     @PatchMapping("/me/password")
     override fun changePassword(
-        @RequestHeader(value = "X-Loopers-LoginId", required = false) loginId: String?,
-        @RequestHeader(value = "X-Loopers-LoginPw", required = false) loginPw: String?,
+        authenticatedMember: AuthenticatedMember,
         @RequestBody request: MemberV1Dto.ChangePasswordRequest,
     ): ApiResponse<Any> {
-        if (loginId.isNullOrBlank() || loginPw.isNullOrBlank()) {
-            throw CoreException(ErrorType.UNAUTHORIZED, "인증 헤더가 누락되었습니다.")
-        }
-        memberFacade.changePassword(loginId, loginPw, request.newPassword)
+        memberFacade.changePassword(authenticatedMember.loginId, request.newPassword)
         return ApiResponse.success()
     }
 }

@@ -59,13 +59,9 @@ class MemberService(
     }
 
     @Transactional
-    fun changePassword(loginId: String, currentPassword: String, newPassword: String) {
+    fun changePassword(loginId: String, newPassword: String) {
         val member = memberRepository.findByLoginId(loginId)
-            ?: throw CoreException(ErrorType.UNAUTHORIZED, "인증에 실패했습니다.")
-
-        if (!passwordEncoder.matches(currentPassword, member.password)) {
-            throw CoreException(ErrorType.UNAUTHORIZED, "인증에 실패했습니다.")
-        }
+            ?: throw CoreException(ErrorType.NOT_FOUND, "존재하지 않는 회원입니다.")
 
         if (passwordEncoder.matches(newPassword, member.password)) {
             throw CoreException(ErrorType.BAD_REQUEST, "현재 비밀번호와 동일한 비밀번호로 변경할 수 없습니다.")

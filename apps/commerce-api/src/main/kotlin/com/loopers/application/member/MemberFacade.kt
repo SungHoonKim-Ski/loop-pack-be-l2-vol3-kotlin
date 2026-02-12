@@ -24,12 +24,12 @@ class MemberFacade(
         )
     }
 
-    fun getMyInfo(loginId: String, password: String): MemberInfo {
-        val member = memberService.authenticate(loginId, password)
+    fun getMyInfo(loginId: String): MemberInfo {
+        val member = memberService.getMemberByLoginId(loginId)
         return MemberInfo.from(member)
     }
 
-    fun changePassword(loginId: String, password: String, newPassword: String) {
-        memberService.changePassword(loginId, password, newPassword)
+    fun changePassword(loginId: String, newPassword: String) {
+        memberService.changePassword(loginId, newPassword)
     }
 }

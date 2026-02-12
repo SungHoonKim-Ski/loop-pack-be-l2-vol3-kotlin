@@ -15,7 +15,6 @@ class CacheConfig {
 
     companion object {
         const val AUTH_CACHE = "auth-cache"
-        const val MEMBER_CACHE = "member-cache"
     }
 
     @Bean
@@ -28,16 +27,8 @@ class CacheConfig {
                 .build(),
         )
 
-        val memberCache = CaffeineCache(
-            MEMBER_CACHE,
-            Caffeine.newBuilder()
-                .expireAfterWrite(10, TimeUnit.MINUTES)
-                .maximumSize(10_000)
-                .build(),
-        )
-
         return SimpleCacheManager().apply {
-            setCaches(listOf(authCache, memberCache))
+            setCaches(listOf(authCache))
         }
     }
 }
