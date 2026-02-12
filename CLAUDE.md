@@ -57,8 +57,8 @@ JWT를 사용하지 않는다 (의도적 결정).
 
 | 구분 | 헤더 | 적용 방식 |
 |------|------|-----------|
-| 대고객 | `X-Loopers-LoginId` + `X-Loopers-LoginPw` | `@Authenticated` 어노테이션 선택 적용 (비인증 API와 혼재) |
-| 어드민 | `X-Loopers-Ldap: loopers.admin` | `/api-admin/**` 경로 패턴 일괄 적용 (전 엔드포인트 필수) |
+| 대고객 | `X-Loopers-LoginId` + `X-Loopers-LoginPw` | `@MemberAuthenticated` 어노테이션 선택 적용 (비인증 API와 혼재) |
+| 어드민 | `X-Loopers-Ldap: loopers.admin` | `@AdminAuthenticated` 어노테이션 클래스 레벨 적용 (전 엔드포인트 필수) |
 
 ## 모듈 구조
 
