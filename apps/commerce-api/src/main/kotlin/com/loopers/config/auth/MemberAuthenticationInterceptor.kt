@@ -13,7 +13,7 @@ import org.springframework.web.method.HandlerMethod
 import org.springframework.web.servlet.HandlerInterceptor
 
 @Component
-class AuthenticationInterceptor(
+class MemberAuthenticationInterceptor(
     private val memberService: MemberService,
     private val cacheManager: CacheManager,
 ) : HandlerInterceptor {
@@ -27,7 +27,7 @@ class AuthenticationInterceptor(
     override fun preHandle(request: HttpServletRequest, response: HttpServletResponse, handler: Any): Boolean {
         if (handler !is HandlerMethod) return true
 
-        handler.getMethodAnnotation(Authenticated::class.java) ?: return true
+        handler.getMethodAnnotation(MemberAuthenticated::class.java) ?: return true
 
         val loginId = request.getHeader(HEADER_LOGIN_ID)
         val password = request.getHeader(HEADER_LOGIN_PW)

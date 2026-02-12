@@ -24,7 +24,7 @@ class AuthenticatedMemberArgumentResolver : HandlerMethodArgumentResolver {
         binderFactory: WebDataBinderFactory?,
     ): AuthenticatedMember {
         return webRequest.getAttribute(
-            AuthenticationInterceptor.AUTHENTICATED_MEMBER_ATTRIBUTE,
+            MemberAuthenticationInterceptor.AUTHENTICATED_MEMBER_ATTRIBUTE,
             RequestAttributes.SCOPE_REQUEST,
         ) as? AuthenticatedMember
             ?: throw CoreException(ErrorType.UNAUTHORIZED, "인증 정보가 없습니다.")

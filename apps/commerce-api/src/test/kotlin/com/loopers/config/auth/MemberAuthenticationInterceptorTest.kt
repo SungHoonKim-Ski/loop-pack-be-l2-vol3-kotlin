@@ -22,9 +22,9 @@ import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.web.method.HandlerMethod
 import java.time.LocalDate
 
-class AuthenticationInterceptorTest {
+class MemberAuthenticationInterceptorTest {
 
-    private lateinit var interceptor: AuthenticationInterceptor
+    private lateinit var interceptor: MemberAuthenticationInterceptor
     private lateinit var memberService: MemberService
     private lateinit var cacheManager: CacheManager
 
@@ -45,7 +45,7 @@ class AuthenticationInterceptorTest {
     fun setUp() {
         memberService = io.mockk.mockk()
         cacheManager = buildTestCacheManager()
-        interceptor = AuthenticationInterceptor(memberService, cacheManager)
+        interceptor = MemberAuthenticationInterceptor(memberService, cacheManager)
     }
 
     private fun buildTestCacheManager(): CacheManager {
@@ -62,8 +62,8 @@ class AuthenticationInterceptorTest {
 
     private fun createRequest(loginId: String?, password: String?): MockHttpServletRequest {
         return MockHttpServletRequest().apply {
-            loginId?.let { addHeader(AuthenticationInterceptor.HEADER_LOGIN_ID, it) }
-            password?.let { addHeader(AuthenticationInterceptor.HEADER_LOGIN_PW, it) }
+            loginId?.let { addHeader(MemberAuthenticationInterceptor.HEADER_LOGIN_ID, it) }
+            password?.let { addHeader(MemberAuthenticationInterceptor.HEADER_LOGIN_PW, it) }
         }
     }
 
@@ -106,7 +106,7 @@ class AuthenticationInterceptorTest {
 
             // assert
             verify(exactly = 1) { memberService.authenticate("testuser01", "TestPass123!") }
-            val authenticatedMember = request2.getAttribute(AuthenticationInterceptor.AUTHENTICATED_MEMBER_ATTRIBUTE) as AuthenticatedMember
+            val authenticatedMember = request2.getAttribute(MemberAuthenticationInterceptor.AUTHENTICATED_MEMBER_ATTRIBUTE) as AuthenticatedMember
             assertThat(authenticatedMember.id).isEqualTo(1L)
             assertThat(authenticatedMember.loginId).isEqualTo("testuser01")
         }
@@ -151,9 +151,9 @@ class AuthenticationInterceptorTest {
         }
     }
 
-    // @Authenticated 어노테이션이 붙은 테스트용 컨트롤러
+    // @MemberAuthenticated 어노테이션이 붙은 테스트용 컨트롤러
     class TestController {
-        @Authenticated
+        @MemberAuthenticated
         fun authenticatedEndpoint() {}
     }
 }

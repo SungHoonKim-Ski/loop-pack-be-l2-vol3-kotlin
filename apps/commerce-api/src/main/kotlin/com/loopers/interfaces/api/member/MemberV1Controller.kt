@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api.member
 
 import com.loopers.application.member.MemberFacade
-import com.loopers.config.auth.Authenticated
+import com.loopers.config.auth.MemberAuthenticated
 import com.loopers.config.auth.AuthenticatedMember
 import com.loopers.interfaces.api.ApiResponse
 import org.springframework.web.bind.annotation.GetMapping
@@ -30,7 +30,7 @@ class MemberV1Controller(
         return ApiResponse.success()
     }
 
-    @Authenticated
+    @MemberAuthenticated
     @GetMapping("/me")
     override fun getMe(
         authenticatedMember: AuthenticatedMember,
@@ -40,7 +40,7 @@ class MemberV1Controller(
             .let { ApiResponse.success(it) }
     }
 
-    @Authenticated
+    @MemberAuthenticated
     @PatchMapping("/me/password")
     override fun changePassword(
         authenticatedMember: AuthenticatedMember,
