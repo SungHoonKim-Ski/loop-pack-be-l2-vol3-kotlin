@@ -166,7 +166,7 @@ com.loopers
 | 항목 | 현재 | 목표 | 상태 |
 |------|------|------|------|
 | Virtual Threads | 미적용 | `spring.threads.virtual.enabled=true` | DONE |
-| Tomcat 튜닝 | max-threads=200, max-connections=8192 | max-connections=10000, accept-count=200 | DONE |
+| Tomcat 튜닝 | max-threads=200, max-connections=8192 | max-threads=50, max-connections=10000, accept-count=200 | DONE |
 | DB 커넥션 풀 | max=40 | max=50 (단일 DB, Phase 2에서 R/W 분리 시 확장) | DONE |
 | 회원가입 중복체크 | findByLoginId + findByEmail (2회 조회) | Unique Constraint + Facade에서 DataIntegrityViolationException 처리 | DONE |
 | 인증 헤더 통일 | X-LOGIN-ID / X-PASSWORD | X-Loopers-LoginId / X-Loopers-LoginPw + Interceptor + ArgumentResolver | DONE |
@@ -197,6 +197,7 @@ com.loopers
 - 도메인 모델이 자기 불변식 보호 → `deductStock()`, `validateOwner()`, `delete()` 등 비즈니스 규칙은 모델 내부
 - cross-domain 접근은 Facade 레벨에서만 조합 → Service 간 직접 참조 금지
 - Soft Delete: `status=DELETED` + `deleted_at` 병행 → `delete()` 메서드에서 동시 설정
+- 재고 동시성 제어: `SELECT FOR UPDATE` 비관적 락 → Phase 1 기능 구현 시 포함 (정합성 핵심)
 - 개발 순서: Phase 1 기능 정합성 → Phase 2 동시성/멱등성/일관성
 
 ### Value Object (VO) 컨벤션

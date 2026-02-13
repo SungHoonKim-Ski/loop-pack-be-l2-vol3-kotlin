@@ -2,7 +2,7 @@ server:
   shutdown: graceful
   tomcat:
     threads:
-      max: 200 # 최대 워커 스레드 수 (default : 200)
+      max: 50 # Virtual Threads 환경에서 carrier thread 적정화 (default : 200)
       min-spare: 10 # 최소 유지 스레드 수 (default : 10)
     connection-timeout: 1m # 연결 타임아웃 (ms) (default : 60000ms = 1m)
     max-connections: 10000 # 최대 동시 연결 수 (default : 8192)

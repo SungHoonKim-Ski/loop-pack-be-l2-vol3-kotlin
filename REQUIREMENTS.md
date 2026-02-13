@@ -112,7 +112,7 @@
 | | BR-L2: 좋아요 등록/취소 양방향 멱등 (이미 좋아요→성공, 좋아요 없이 취소→성공) |
 | | BR-L3: 본인 좋아요 목록만 조회 가능 |
 | | BR-L4: 존재하지 않는 상품에 좋아요 불가 (Facade에서 ProductService로 검증) |
-| 집계 전략 | product.like_count 컬럼 (DEFAULT 0) + commerce-batch 배치 갱신 (10K TPS 대응) |
+| 집계 전략 | product.like_count 컬럼 (DEFAULT 0) + commerce-batch 배치 갱신 (5분 주기, 10K TPS 대응) |
 | 페이징 | 좋아요 목록 조회에 페이징 없음 (API 명세대로) |
 
 ### 주문 — 설계 완료
@@ -135,7 +135,7 @@
 | 주문 번호 | UUID (내부 ID 노출 방지) |
 | 주문 상태 | ORDERED / CANCELLED (주문 취소 API는 현재 스코프 외) |
 | 트랜잭션 | Facade @Transactional로 재고 차감 + 주문 생성 원자성 보장 |
-| 동시성 | 기능 완성 후 별도 해결 (비관적 락 등) |
+| 동시성 | Phase 1에 비관적 락(SELECT FOR UPDATE) 포함. 재고 차감 시 정합성 보장 |
 | 대고객 페이징 | 기간 필터만 적용, 페이징 없음 (API 명세대로) |
 
 ### 쿠폰 — TODO
@@ -194,7 +194,7 @@
 | 상태 | DONE |
 | 배경 | 기본 `max-connections=8192`, `accept-count=100`은 10K TPS에 부족 |
 | 요구사항 | 동시 연결 수와 대기 큐를 확장하여 피크 트래픽 수용 |
-| 수용 기준 | `max-connections=10000`, `accept-count=200` |
+| 수용 기준 | `max-threads=50`, `max-connections=10000`, `accept-count=200` |
 
 ### REQ-1.3: DB 커넥션 풀 확장
 
@@ -334,7 +334,7 @@
 | 재고 검증 위치 | 도메인 모델 내부 (ProductModel.deductStock → 불변식 보호) | D9 |
 | 본인 주문 검증 위치 | 도메인 모델 내부 (OrderModel.validateOwner → 비즈니스 규칙 보호) | D10 |
 | Soft Delete 방식 | status=DELETED + deleted_at 병행. delete() 메서드에서 동시 설정 | D11 |
-| 좋아요 수 집계 | product.like_count 컬럼 (DEFAULT 0) + commerce-batch 배치 갱신 | D12 |
+| 좋아요 수 집계 | product.like_count 컬럼 (DEFAULT 0) + commerce-batch 배치 갱신 (5분 주기) | D12 |
 | 주문 번호 | UUID 방식 (내부 auto-increment ID 노출 방지) | D13 |
 | INACTIVE/SUSPENDED 상태 | 미포함 (YAGNI. 현재 요구사항에 비활성화/판매중단 시나리오 없음) | D14 |
 | SOLD_OUT 상태 | 제거. ProductStatus = ACTIVE/DELETED. stock=0이 품절 표현. soldOut Boolean 파생 필드로 고객 전달 | D16 |
@@ -352,6 +352,7 @@
 | 스냅샷 범위 | productName, productPrice, brandName만 복사. quantity는 주문입력, amount는 파생값 | D25 |
 | 주문 총액 비정규화 제거 | totalAmount 컬럼 미사용. `getTotalAmount() = orderItems.sumOf { it.amount }` 파생 계산 | D24 |
 | 비밀번호 변경 시 캐시 eviction | MemberFacade에서 loginId 기반 auth-cache evict | D5 |
+| 재고 동시성 제어 | 비관적 락(SELECT FOR UPDATE). Phase 1 기능 구현 시 포함 | D9 |
 | 개발 순서 원칙 | Phase 1: 기능 정합성 → Phase 2: 동시성/멱등성/일관성/성능 | — |
 
 ---

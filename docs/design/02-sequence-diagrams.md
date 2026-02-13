@@ -153,6 +153,7 @@ sequenceDiagram
     ProductSvc-->>Facade: Product list
 
     Facade->>ProductSvc: deductStock(productId:1, qty:2)
+    Note right of ProductSvc: SELECT FOR UPDATE (비관적 락)
     Note right of ProductSvc: ProductModel.deductStock(2)
     Note right of ProductSvc: 도메인 모델이 stockQuantity >= qty 검증
     break 재고 부족
@@ -185,7 +186,7 @@ sequenceDiagram
 - **도메인 모델의 불변식 보호**: `ProductModel.deductStock(qty)`이 내부에서 `stockQuantity >= qty`를 검증한다. 재고 부족 시 도메인 모델이 예외를 던지며, Facade는 비즈니스 판단 로직을 갖지 않는다.
 - **트랜잭션 경계**: Facade 레이어에서 `@Transactional`로 재고 차감과 주문 생성을 하나의 트랜잭션으로 묶는다. 재고 차감 후 주문 생성이 실패하면 전체 롤백된다.
 - **스냅샷 저장**: OrderItem에 주문 시점의 상품명(`productName`), 가격(`productPrice`), 브랜드명(`brandName`)을 복사하여 저장한다 (BR-O2).
-- **동시성 이슈**: 현재 단계에서는 기능 정합성에 집중한다. 동시 주문에 의한 재고 경합은 기능 완성 후 별도 해결한다.
+- **재고 동시성 제어**: `ProductService.deductStock()`에서 비관적 락(`SELECT FOR UPDATE`)을 적용하여 동시 주문 시 재고 정합성을 보장한다. 재고 차감은 정합성이 핵심이므로 Phase 1(기능 구현)에 포함한다.
 
 ---
 
