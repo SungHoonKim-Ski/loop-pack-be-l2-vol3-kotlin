@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DB는 왜 느릴까? — Practical Read Optimization</title>
+  <style>
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a2e;
+  --card: #f8f9fc;
+  --muted: #f0f1f5;
+  --muted-fg: #6b7280;
+  --border: #e2e4e9;
+  --accent: #4f46e5;
+  --cyan: #0891b2;
+  --success: #16a34a;
+  --danger: #dc2626;
+  --warning: #d97706;
+  --info: #2563eb;
+  --code-bg: #f6f8fa;
+  --code-border: #e2e4e9;
+  --sk: #8250df; --ss: #0a3069; --sn: #0550ae; --so: #0891b2; --sc: #6e7781; --st: #0550ae; --snum: #cf222e;
+  --radius: 12px; --radius-sm: 8px;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg); color: var(--fg); overflow-x: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Pretendard', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased; font-feature-settings: "rlig" 1, "calt" 1;
+  word-break: keep-all; overflow-wrap: break-word; line-height: 1.6;
+}
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+html, body { scroll-snap-type: y mandatory; overflow-y: scroll; height: 100%; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 32px; }
+@media (max-width: 640px) { .wrap { padding: 0 20px; } }
+.section { height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; scroll-snap-align: start; }
+.section > .wrap { width: 100%; max-height: 92vh; overflow-y: auto; overflow-x: hidden; padding-top: 4vh; padding-bottom: 4vh; }
+.section-title { font-size: clamp(1.45rem, 2.7vw, 2.1rem); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 4px; }
+.section-subtitle { font-size: clamp(14px, 1.8vw, 17px); color: var(--muted-fg); line-height: 1.7; margin-bottom: clamp(18px, 3vh, 36px); }
+#progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 1000; background: linear-gradient(90deg, var(--accent), var(--cyan)); transform-origin: left; transform: scaleX(0); }
+#nav { position: fixed; right: 20px; top: 50%; transform: translateY(-50%); z-index: 900; display: flex; flex-direction: column; gap: 9px; }
+@media (max-width: 1280px) { #nav { display: none; } }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); cursor: pointer; transition: all .3s; position: relative; }
+.dot.active { background: var(--accent); box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 50%, transparent); transform: scale(1.4); }
+.dot .label { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 11px; color: var(--muted-fg); background: var(--card); border: 1px solid var(--border); padding: 3px 8px; border-radius: 4px; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.dot:hover .label { opacity: 1; }
+.codeblock { background: var(--code-bg); border: 1px solid var(--code-border); border-radius: var(--radius-sm); overflow: hidden; }
+.codeblock-title { padding: 8px 14px; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; border-bottom: 1px solid var(--code-border); }
+.codeblock pre { margin: 0; padding: 14px 16px; overflow-x: auto; overflow-y: auto; max-height: 32vh; font-family: 'SF Mono', SFMono-Regular, ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.65; color: var(--fg); white-space: pre; }
+.svc { opacity: 0; transform: scale(.85); transition: opacity .4s ease-out, transform .4s ease-out; }
+.svc.v { opacity: 1; transform: scale(1); }
+.phase-tag { display: inline-block; padding: 4px 12px; border-radius: 100px; font-size: 11px; font-weight: 800; letter-spacing: 0.03em; }
+[data-a] { opacity: 0; transform: translateY(22px); transition: opacity .6s ease-out, transform .6s ease-out; }
+[data-a].v { opacity: 1; transform: translateY(0); }
+[data-a][data-d="1"] { transition-delay: .08s; }
+[data-a][data-d="2"] { transition-delay: .16s; }
+[data-a][data-d="3"] { transition-delay: .24s; }
+[data-a][data-d="4"] { transition-delay: .32s; }
+.cursor { display: inline-block; width: 4px; height: 1em; background: var(--accent); margin-left: 3px; vertical-align: text-bottom; animation: blink .7s step-end infinite; }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(8px); } }
+.bob { animation: bob 2s ease-in-out infinite; }
+.flip { perspective: 1000px; cursor: pointer; }
+.flip-inner { position: relative; width: 100%; min-height: 150px; transition: transform .6s; transform-style: preserve-3d; }
+.flip.on .flip-inner { transform: rotateX(180deg); }
+.flip-f, .flip-b { position: absolute; inset: 0; backface-visibility: hidden; border-radius: var(--radius); padding: 22px; display: flex; flex-direction: column; justify-content: center; }
+.flip-f { background: var(--card); border: 1px solid var(--border); }
+.flip-b { background: color-mix(in srgb, var(--accent) 8%, var(--muted)); border: 1px solid color-mix(in srgb,var(--accent) 30%,transparent); transform: rotateX(180deg); }
+
+/* concept + visual layout */
+.kw-row { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0 20px; }
+.kw { display: inline-block; padding: 5px 12px; border-radius: 100px; background: var(--muted); font-size: 12.5px; font-weight: 600; color: var(--accent); border: 1px solid var(--border); }
+.split { display: grid; grid-template-columns: 0.95fr 1.05fr; gap: 28px; align-items: start; }
+@media (max-width: 880px) { .split { grid-template-columns: 1fr; gap: 20px; } }
+.concept { display: flex; flex-direction: column; gap: 14px; }
+.cgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 880px) { .cgrid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) { .cgrid { grid-template-columns: 1fr; } }
+.ccard { padding: 16px 18px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--card); }
+.ccard .cterm { font-size: 13.5px; }
+.ccard .cdesc { font-size: 12px; line-height: 1.58; }
+.cterm { font-size: 14px; font-weight: 800; color: var(--fg); margin-bottom: 3px; }
+.cterm .badge { font-size: 10px; font-weight: 700; color: var(--accent); background: color-mix(in srgb,var(--accent) 12%,transparent); padding: 2px 7px; border-radius: 100px; margin-left: 6px; vertical-align: middle; }
+.cdesc { font-size: 13px; color: #44485a; line-height: 1.62; }
+.cdesc code { font-size: 11.5px; background: var(--muted); padding: 1px 5px; border-radius: 4px; font-family: 'SF Mono', monospace; }
+.note { margin-top: 16px; padding: 12px 16px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent) 7%, transparent); border-left: 3px solid var(--accent); font-size: 13px; line-height: 1.6; }
+.note.warn { background: color-mix(in srgb, var(--warning) 10%, transparent); border-left-color: var(--warning); }
+.note code { font-size: 11.5px; background: var(--muted); padding: 1px 5px; border-radius: 4px; }
+
+/* before/after */
+.cmp { display: grid; grid-template-rows: auto auto; gap: 12px; }
+.duo { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center; }
+.bigstat { text-align: center; padding: 24px 16px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--card); }
+.bigstat .n { font-size: clamp(26px, 3.6vw, 40px); font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+.bigstat .sub { font-size: 12px; color: var(--muted-fg); margin-top: 10px; line-height: 1.5; }
+.bigstat .tag { font-size: 11px; font-weight: 800; letter-spacing: 0.03em; margin-bottom: 10px; }
+.bigstat.bad { background: color-mix(in srgb, var(--danger) 6%, transparent); border-color: color-mix(in srgb, var(--danger) 28%, transparent); }
+.bigstat.bad .n, .bigstat.bad .tag { color: var(--danger); }
+.bigstat.good { background: color-mix(in srgb, var(--success) 7%, transparent); border-color: color-mix(in srgb, var(--success) 34%, transparent); }
+.bigstat.good .n, .bigstat.good .tag { color: var(--success); }
+.vs-arrow { font-size: 18px; font-weight: 800; color: var(--muted-fg); text-align: center; }
+.versus { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.vbox { padding: 18px; border-radius: var(--radius); border: 1px solid var(--border); }
+.vbox h4 { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
+.vbox .vsub { font-size: 11.5px; color: var(--muted-fg); margin-bottom: 10px; }
+.vbox p { font-size: 13px; line-height: 1.55; }
+.vbox.bad { background: color-mix(in srgb, var(--danger) 6%, transparent); border-color: color-mix(in srgb, var(--danger) 26%, transparent); }
+.vbox.bad h4 { color: var(--danger); }
+.vbox.good { background: color-mix(in srgb, var(--success) 7%, transparent); border-color: color-mix(in srgb, var(--success) 32%, transparent); }
+.vbox.good h4 { color: var(--success); }
+.formula { text-align: center; padding: 26px 16px; border-radius: var(--radius); background: var(--card); border: 1px dashed var(--border); font-size: clamp(18px, 2.6vw, 26px); font-weight: 700; font-family: 'SF Mono', monospace; }
+.formula .hl { color: var(--danger); }
+.layer { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 9px; background: var(--card); }
+.layer .lname { font-weight: 700; font-size: 13.5px; }
+.layer .lkey { font-size: 11px; color: var(--muted-fg); font-family: 'SF Mono', monospace; }
+.layer .ttl { margin-left: auto; font-weight: 800; font-size: 14px; color: var(--accent); white-space: nowrap; }
+.layer .evt { font-size: 10.5px; color: var(--muted-fg); white-space: nowrap; margin-left: 12px; }
+.svc-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+@media (max-width: 768px) { .svc-grid { grid-template-columns: 1fr; } }
+.svc-card { padding: 22px 24px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--card); border-top: 3px solid var(--accent); }
+.svc-num { font-size: 12px; font-weight: 800; letter-spacing: 0.03em; margin-bottom: 8px; }
+.svc-title { font-size: 17px; font-weight: 800; margin-bottom: 6px; }
+.svc-desc { font-size: 13px; color: var(--muted-fg); line-height: 1.6; }
+.decision { display: flex; flex-direction: column; gap: 7px; }
+.opt { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; border: 1px solid var(--border); background: var(--card); }
+.opt.pick { background: color-mix(in srgb, var(--success) 10%, transparent); border-color: color-mix(in srgb, var(--success) 42%, transparent); font-weight: 700; }
+.opt.pick .mark { color: var(--success); font-weight: 800; }
+.opt .mark { min-width: 16px; color: var(--muted-fg); font-weight: 700; }
+.flow-list { list-style: none; padding: 0; margin-top: 12px; }
+.flow-list li { padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; line-height: 1.55; display: flex; gap: 12px; align-items: flex-start; }
+.flow-list li:last-child { border-bottom: none; }
+.flow-n { min-width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.seq { font-size: 13px; line-height: 1.85; }
+.seq b { color: var(--accent); }
+.section.deep { background: linear-gradient(180deg, #f7f8fd 0%, #fbfaff 100%); }
+.deep-tag { background: var(--fg); color: #fff; }
+.lat-row { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+.lat-name { min-width: 70px; font-size: 12px; font-weight: 700; }
+.lat-track { flex: 1; height: 17px; background: var(--muted); border-radius: 5px; overflow: hidden; }
+.lat-fill { height: 100%; border-radius: 5px; }
+.lat-val { min-width: 60px; font-size: 11px; font-weight: 700; text-align: right; font-family: 'SF Mono', monospace; color: var(--muted-fg); }
+.tri-card { padding: 13px 16px; border-left: 4px solid var(--border); border-radius: 8px; background: var(--card); margin-bottom: 10px; }
+.tri-head { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+.tri-dev { font-size: 16px; font-weight: 800; min-width: 46px; }
+.tri-speed { display: inline-block; padding: 2px 11px; border-radius: 100px; font-size: 12px; font-weight: 800; font-family: 'SF Mono', monospace; }
+.tri-persist { margin-left: auto; font-size: 12px; font-weight: 700; }
+.tri-attr { font-size: 12px; color: #44485a; line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+<div id="progress"></div>
+<div id="nav"></div>
+
+<!-- ===== 1. Hero ===== -->
+<section class="section" id="hero" data-label="Hero">
+  <div class="wrap" style="text-align:center;">
+    <div data-a>
+      <div style="display:inline-block;padding:6px 16px;border-radius:100px;background:var(--muted);font-size:13px;font-weight:700;color:var(--accent);margin-bottom:30px;">Practical Read Optimization</div>
+    </div>
+    <h1 data-a data-d="1" style="font-size:clamp(2.2rem,5.5vw,3.7rem);font-weight:800;letter-spacing:-0.03em;line-height:1.25;margin-bottom:22px;">
+      <span id="typer" data-text="DB는 왜 느릴까?" data-speed="75"></span><span id="typer-cursor" class="cursor"></span>
+    </h1>
+    <p data-a data-d="2" style="font-size:clamp(15px,2vw,19px);color:var(--muted-fg);max-width:620px;margin:0 auto;line-height:1.7;">
+      조회가 느려지는 지점은 늘 비슷하다.<br>그 지점을 푸는 <b style="color:var(--fg);">읽기 최적화의 개념과 선택들</b>
+    </p>
+    <div data-a data-d="4" style="margin-top:56px;" class="bob">
+      <span style="font-size:24px;color:var(--muted-fg);">&#8595;</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 2. 왜 캐시인가 (토대) ===== -->
+<section class="section deep" id="cache-why" data-label="왜 느린가">
+  <div class="wrap">
+    <span class="phase-tag deep-tag">왜 캐시인가 — 모든 최적화의 출발점</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">DB는 왜 느리고, 캐시는 왜 빠른가</h2>
+    <p class="section-subtitle" data-a data-d="1">자주 읽는 결과를, 더 빠른 계층에 둔다.</p>
+    <div class="split">
+      <div class="concept" data-a data-d="2">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:4px;">DB가 (글로벌 캐시보다도) 느린 이유</div>
+        <div>
+          <div class="cterm">디스크 본체</div>
+          <div class="cdesc">데이터가 디스크(SSD/HDD)에 있다 → Redis는 순수 메모리. <span style="color:var(--muted-fg);">(물리적 이유는 다음 장)</span></div>
+        </div>
+        <div>
+          <div class="cterm">쿼리 실행 + 버퍼풀 한계</div>
+          <div class="cdesc">파싱·플래닝·실행이 매번 얹히고, InnoDB 버퍼풀(RAM)도 용량 한계 → 미스 시 디스크 random I/O. Redis는 <b>키 조회 한 방</b>.</div>
+        </div>
+        <div>
+          <div class="cterm">네트워크도 '비용'이다</div>
+          <div class="cdesc">글로벌 캐시(Redis)든 DB든, 네트워크 너머라 요청-응답 왕복(~수백 µs)이 <b>똑같이</b> 든다 — DB만의 병목이 아니다. <b>로컬 캐시(Caffeine)만</b> 이마저 없앤다.</div>
+        </div>
+      </div>
+      <div data-a data-d="3">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:12px;">그래서 — 캐시 계층의 선택</div>
+        <div class="vbox good" style="margin-bottom:11px;">
+          <h4>글로벌 캐시 (Redis)</h4>
+          <p>디스크 + 쿼리 실행을 없앤다. 네트워크는 남지만 메모리 조회라 DB보다 빠르다. 여러 인스턴스가 공유.</p>
+        </div>
+        <div class="vbox good" style="margin-bottom:11px;background:color-mix(in srgb,var(--success) 11%,transparent);">
+          <h4>로컬 캐시 (Caffeine)</h4>
+          <p>네트워크 왕복마저 없앤다(~ns). 대신 인스턴스마다 사본이 따로 생긴다.</p>
+        </div>
+        <div style="font-size:11.5px;color:#8a6d00;background:color-mix(in srgb,var(--warning) 13%,transparent);border-radius:8px;padding:10px 13px;margin-bottom:11px;line-height:1.55;">
+          ⚠ <b>일관성 지점이 늘어난다</b> — 무효화할 곳이 <b>DB(1) → +글로벌 Redis(2) → +로컬 캐시 N대(2+N)</b>. 계층을 더할수록 갈라진 사본이 늘어 무효화가 어려워진다(로컬은 인스턴스 간 동기화가 사실상 불가 → 보통 짧은 TTL로 타협).
+        </div>
+        <div class="note">결과를 더 빠른 계층에 두는 한 가지 이야기 — 인덱스로 디스크 덜 읽기(P1)·캐시로 메모리에(P2)·사전계산으로 미리(P3).</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 1c. 랜덤 액세스 오해 ===== -->
+<section class="section deep" id="ram-myth" data-label="랜덤 액세스?">
+  <div class="wrap">
+    <span class="phase-tag deep-tag">잠깐, "랜덤 액세스"?</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">"랜덤 액세스라서" 빠른 게 아니다</h2>
+    <p class="section-subtitle" data-a data-d="1">흔한 오해 — 랜덤 액세스는 <b>속도</b>가 아니라 '<b>접근 방식</b>'을 가리키는 말이다.</p>
+    <div class="split">
+      <div class="concept" data-a data-d="2">
+        <div>
+          <div class="cterm">① 랜덤 액세스 = 접근 방식</div>
+          <div class="cdesc"><b>"임의 위치를 직접 지정 가능"</b>이란 뜻. 반대말은 테이프식 <b>순차 접근</b>(10번 곡 들으려 1~9번을 감아야 함). CD가 10번을 바로 누르는 게 랜덤 — 속도와는 무관한 개념이다.</div>
+        </div>
+        <div>
+          <div class="cterm">② RAM이 빠른 진짜 이유 = 전자식</div>
+          <div class="cdesc"><b>전기 신호</b>로 닿는다 → 나노초(ns). 디스크(HDD)는 <b>금속 헤드가 물리적으로 이동</b>해서 닿는다 → 밀리초(ms). 전기 신호 vs 기계 운동 — 이게 100만 배 차이의 본질.</div>
+        </div>
+        <div>
+          <div class="cterm">③ 주소는 둘 다 안다</div>
+          <div class="cdesc">디스크도 "1234번 → 몇 트랙 몇 섹터"를 즉시 계산한다. 차이는 그 다음 — RAM은 데이터 주소 계산이 끝난 순간 데이터에 접근 가능하지만, 디스크는 헤드 이동 + 회전 대기 시간이 걸린다.</div>
+        </div>
+      </div>
+      <div data-a data-d="3">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:12px;">비유로</div>
+        <div class="vbox good" style="margin-bottom:14px;">
+          <h4>RAM = 책상 서랍</h4>
+          <div class="vsub">진짜 랜덤 액세스</div>
+          <p>몇 번 칸이든 손만 뻗으면 닿는다. "3번 칸"이라고 아는 순간 = 꺼낸 거나 마찬가지. <b>어디든 거의 똑같이 빠르다.</b></p>
+        </div>
+        <div class="vbox bad">
+          <h4>디스크 = 회전목마 책장</h4>
+          <div class="vsub">반쪽짜리</div>
+          <p>칸 번호를 알아도 <b>바로 못 꺼낸다.</b><br>① 그 칸까지 걸어가고 <span style="color:var(--muted-fg);">(헤드 이동)</span><br>② 책장이 돌아 칸이 올 때까지 기다린다 <span style="color:var(--muted-fg);">(회전 대기)</span><br>→ 멀수록 느리다.</p>
+        </div>
+        <div class="note">세 줄 요약 — ① 랜덤 액세스 = "임의 위치 직접 지정"(↔순차), 빠름이 아님 ② RAM은 전기로 닿아 빠르고, 디스크는 헤드가 움직여 느림 ③ 주소는 둘 다 안다 — 차이는 '아는 것'과 '닿는 것' 사이의 물리 운동.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 1e. SSD vs RAM ===== -->
+<section class="section deep" id="ssd-vs-ram" data-label="SSD vs RAM">
+  <div class="wrap">
+    <span class="phase-tag deep-tag">SSD는 왜 RAM보다 느릴까</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">같은 전자식인데도, SSD가 RAM보다 느린 이유</h2>
+    <p class="section-subtitle" data-a data-d="1">영속성을 얻은 대가로 속도를 내줬다 — 4가지 이유.</p>
+    <div class="split">
+      <div class="concept" data-a data-d="2">
+        <div>
+          <div class="cterm">① 셀 재질이 다르다</div>
+          <div class="cdesc">DRAM은 <b>전하로 잠깐</b> 담는다(물컵 붓고 비우기). NAND는 전자를 절연막에 <b>가둬</b> 비휘발성으로(금고에 잠그기) — 안 빠지게 가두니 넣고 빼기가 느리다.</div>
+        </div>
+        <div>
+          <div class="cterm">② 덮어쓰기가 안 된다</div>
+          <div class="cdesc">쓰기는 <b>페이지(4~16KB)</b>, 지우기는 더 큰 <b>블록</b> 단위. 한 글자 수정도 "블록 읽기 → 새로 쓰기 → 옛 블록 지우기"(가비지 컬렉션). 연필이 아니라 펜으로만 쓰는 공책.</div>
+        </div>
+        <div>
+          <div class="cterm">③ 컨트롤러를 거친다</div>
+          <div class="cdesc">FTL(논리↔물리 주소 변환)·웨어레벨링(수명 분산)·GC를 하는 <b>중간 관리자</b>가 반드시 낀다. RAM엔 없는 계층.</div>
+        </div>
+        <div>
+          <div class="cterm">④ 통로가 멀다</div>
+          <div class="cdesc">PCIe/SATA + OS 파일시스템·드라이버 <b>소프트웨어 계층</b>을 거친다. CPU와 버스로 직결된 RAM보다 단계가 많다.</div>
+        </div>
+      </div>
+      <div data-a data-d="3">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:6px;">삼각형 — 속도 vs 영속성</div>
+        <div style="font-size:11px;color:var(--muted-fg);margin-bottom:12px;">빠름·휘발 &nbsp;◀───────▶&nbsp; 느림·영속</div>
+        <div class="tri-card" style="border-left-color:var(--success);">
+          <div class="tri-head">
+            <span class="tri-dev">RAM</span>
+            <span class="tri-speed" style="background:color-mix(in srgb,var(--success) 16%,transparent);color:var(--success);">ns · 가장 빠름</span>
+            <span class="tri-persist" style="color:var(--danger);">✗ 휘발</span>
+          </div>
+          <div class="tri-attr">전기 신호 · CPU 직결 &nbsp;|&nbsp; 한 글자도 바로 수정</div>
+        </div>
+        <div class="tri-card" style="border-left-color:var(--warning);">
+          <div class="tri-head">
+            <span class="tri-dev">SSD</span>
+            <span class="tri-speed" style="background:color-mix(in srgb,var(--warning) 18%,transparent);color:var(--warning);">µs · 중간</span>
+            <span class="tri-persist" style="color:var(--success);">✓ 영속</span>
+          </div>
+          <div class="tri-attr">전기(NAND) · 컨트롤러 + I/O 경유 &nbsp;|&nbsp; 블록 지우고 다시 써야</div>
+        </div>
+        <div class="tri-card" style="border-left-color:var(--danger);">
+          <div class="tri-head">
+            <span class="tri-dev">HDD</span>
+            <span class="tri-speed" style="background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);">ms · 가장 느림</span>
+            <span class="tri-persist" style="color:var(--success);">✓ 영속</span>
+          </div>
+          <div class="tri-attr">금속 헤드 물리 이동 &nbsp;|&nbsp; 그 자리에 덮어쓰기</div>
+        </div>
+        <div class="note">RAM은 <b>속도를 얻고 영속성을 포기</b>, 디스크는 <b>영속성을 얻고 속도를 내줌</b>. 그래서 계층으로 쌓는다 — 자주 쓰는 건 RAM(캐시), 영구 보관은 디스크.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 1f. DB 캐시 — 공통 뼈대 ===== -->
+<section class="section deep" id="db-cache" data-label="DB 캐시 공통">
+  <div class="wrap">
+    <span class="phase-tag deep-tag">DB들의 캐시, 공통 뼈대</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">DB도 캐시를 쓴다</h2>
+    <p class="section-subtitle" data-a data-d="1">같은 물리 제약(RAM vs 디스크)을 푸니 <b>해법이 수렴</b>한다 — 이름만 다를 뿐.</p>
+    <div class="split">
+      <div data-a data-d="2">
+        <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:9px;">
+          <span style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;">1</span>
+          <span style="font-size:15px;font-weight:800;">페이지 캐싱</span>
+          <span style="font-size:11.5px;font-weight:600;color:var(--muted-fg);">Buffer Pool 계열</span>
+        </div>
+        <div style="font-size:12.5px;color:#44485a;line-height:1.55;margin-bottom:11px;">데이터·인덱스 <b>페이지</b>를 RAM에 들고 있어 디스크 I/O를 줄인다. <span style="color:var(--muted-fg);">"DB 메모리 튜닝 = 이 캐시 크기 잡기"</span></div>
+        <div class="card" style="padding:0;overflow:hidden;">
+          <table class="dtable">
+            <tbody>
+              <tr><td style="font-weight:600;">MySQL (InnoDB)</td><td>Buffer Pool <span style="color:var(--muted-fg);">· 16KB</span></td></tr>
+              <tr><td style="font-weight:600;">PostgreSQL</td><td>Shared Buffers <span style="color:var(--muted-fg);">· 8KB</span></td></tr>
+              <tr><td style="font-weight:600;">Oracle</td><td>Buffer Cache <span style="color:var(--muted-fg);">· SGA</span></td></tr>
+              <tr><td style="font-weight:600;">SQL Server</td><td>Buffer Pool</td></tr>
+              <tr><td style="font-weight:600;">MongoDB</td><td>WiredTiger Cache</td></tr>
+              <tr><td style="font-weight:600;">SQLite</td><td>Page Cache</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div data-a data-d="3">
+        <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:9px;">
+          <span style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;">2</span>
+          <span style="font-size:15px;font-weight:800;">쓰기는 WAL 먼저</span>
+          <span style="font-size:11.5px;font-weight:600;color:var(--muted-fg);">Write-Ahead Logging</span>
+        </div>
+        <div style="font-size:12.5px;color:#44485a;line-height:1.55;margin-bottom:11px;">데이터 파일(디스크)에 바로 쓰면 <b>여기저기 흩어진 랜덤 쓰기</b>라 느리다. 그래서 ① RAM 버퍼에서 바꾸고 ② 변경분만 <b>로그 끝에 순차로 이어 붙여</b>(append=빠름) 영속성을 먼저 확보 — 데이터 파일은 나중에 모아서 반영하고, 장애가 나도 이 로그로 복구한다.</div>
+        <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px;">
+          <table class="dtable">
+            <tbody>
+              <tr><td style="font-weight:600;">MySQL · Oracle</td><td>redo log</td></tr>
+              <tr><td style="font-weight:600;">PostgreSQL</td><td>WAL <span style="color:var(--muted-fg);">· 원조</span></td></tr>
+              <tr><td style="font-weight:600;">SQL Server</td><td>transaction log</td></tr>
+              <tr><td style="font-weight:600;">MongoDB</td><td>journal</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:8px;">
+          <span style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;">3</span>
+          <span style="font-size:15px;font-weight:800;">그 아래 OS page cache</span>
+        </div>
+        <div class="note">DB 종류와 무관하게, 디스크 파일을 읽으면 OS가 한 번 더 캐싱한다. <b>같은 제약 → 같은 해법.</b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 1g. DB 캐시 — 차이 & 왜 Redis ===== -->
+<section class="section deep" id="db-cache-diff" data-label="DB 캐시 차이 · 왜 Redis">
+  <div class="wrap">
+    <span class="phase-tag deep-tag">그럼 뭐가 다르고, 왜 Redis인가</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">다른 건 구현 디테일 — '결과 캐싱'은 빠졌다</h2>
+    <div class="split">
+      <div class="concept" data-a data-d="1">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:4px;">DB마다 다른 부분</div>
+        <div>
+          <div class="cterm">OS 캐시를 믿느냐, 직접 관리하느냐</div>
+          <div class="cdesc"><b>PostgreSQL</b> — shared_buffers 작게 + OS page cache에 위임(권장 ~25%). <b>Oracle·InnoDB(O_DIRECT)</b> — OS 우회, 자기 버퍼에 직접 관리(~50–70%). 같은 페이지 캐싱인데 역할 분담이 <b>정반대</b>.</div>
+        </div>
+        <div>
+          <div class="cterm">교체 정책</div>
+          <div class="cdesc">다 LRU 계열이나 변형이 제각각 — InnoDB young/old(대량 스캔 오염 방지), PostgreSQL clock sweep. 목표는 같고 알고리즘이 다르다.</div>
+        </div>
+      </div>
+      <div class="concept" data-a data-d="2">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:4px;">그래서 — 왜 Redis인가</div>
+        <div>
+          <div class="cterm">결과 캐싱은 공통이 <b>아니다</b></div>
+          <div class="cdesc">MySQL Query Cache는 8.0에서 제거(무효화·경합). 페이지 캐시는 디스크 I/O만 줄일 뿐, <b>파싱·플래닝·실행은 매번</b> → 현대 DB는 결과 캐싱을 앱(Redis)으로 <b>외부화</b>한다.</div>
+        </div>
+        <div>
+          <div class="cterm">in-memory DB는 트레이드오프를 뒤집음</div>
+          <div class="cdesc">Redis·SAP HANA — "디스크가 본진, RAM이 캐시"가 아니라 <b>RAM이 본진</b>, 디스크는 백업(스냅샷·AOF)용. 속도 최우선, 용량은 RAM 한계.</div>
+        </div>
+        <div class="note">공통 = 페이지 캐싱·WAL·OS 캐시. 다름 = OS 의존도·교체 정책·<b>결과 캐싱</b>. DB가 안 하는 결과 캐싱, 그 자리를 Redis가 채운다.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 2. 개요 ===== -->
+<section class="section" id="overview" data-label="4 레이어">
+  <div class="wrap">
+    <h2 class="section-title" data-a>이 발표의 세 걸음</h2>
+    <p class="section-subtitle" data-a data-d="1">DB가 <b>왜 느린지</b>부터, 그걸 푸는 두 가지 해법까지.</p>
+    <div class="svc-grid" data-stagger style="grid-template-columns:repeat(3,1fr);">
+      <div class="svc-card svc" style="border-top-color:var(--fg);">
+        <div class="svc-num" style="color:var(--fg);">토대</div>
+        <div class="svc-title">DB는 왜 느린가</div>
+        <div class="svc-desc">디스크 본체 + 네트워크 왕복 + 쿼리 실행. 메모리 계층·저장장치·DB 자체 캐시까지 파고든다</div>
+      </div>
+      <div class="svc-card svc" style="border-top-color:var(--accent);">
+        <div class="svc-num" style="color:var(--accent);">PART 1 · 쿼리</div>
+        <div class="svc-title">DB가 덜 일하게</div>
+        <div class="svc-desc">인덱스·커서로 filesort / deep offset 제거 — 디스크를 덜 읽게</div>
+      </div>
+      <div class="svc-card svc" style="border-top-color:var(--cyan);">
+        <div class="svc-num" style="color:var(--cyan);">PART 2 · 캐싱</div>
+        <div class="svc-title">같은 질문 반복 차단</div>
+        <div class="svc-desc">자주 읽는 결과를 캐시 — 단 장애 격리·트레이드오프를 한 세트로</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 3. C1 인덱스 ===== -->
+<section class="section" id="c1" data-label="C1 인덱스">
+  <div class="wrap">
+    <span class="phase-tag" style="background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);">PART 1 · 쿼리</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">C1 · 인덱스로 정렬까지 끝내기</h2>
+    <div class="kw-row" data-a data-d="1">
+      <span class="kw">복합 인덱스</span><span class="kw">커버링 인덱스</span><span class="kw">EXPLAIN</span><span class="kw">filesort</span><span class="kw">leftmost prefix</span><span class="kw">descending(8.0)</span>
+    </div>
+    <div class="split">
+      <div class="concept" data-a data-d="2">
+        <div>
+          <div class="cterm">① 복합 인덱스</div>
+          <div class="cdesc">여러 컬럼을 묶은 B+Tree. 리프에 컬럼 순서대로 정렬 저장 → 선두로 진입해 순차 스캔하면 <b>그게 곧 정렬 결과</b>(추가 정렬 0). 규칙: 등치(<code>=</code>) 필터 먼저, 정렬키 뒤. <span style="color:var(--muted-fg);">(leftmost — 왼쪽부터 연속으로 써야 먹는다)</span></div>
+        </div>
+        <div>
+          <div class="cterm">② 커버링 인덱스</div>
+          <div class="cdesc">필요한 컬럼이 전부 인덱스 안에 있으면 PK 본체를 안 읽는다(<code>Using index</code>). <code>SELECT *</code>는 빠진 컬럼 때문에 행마다 PK lookup → 커버링 깨짐.</div>
+        </div>
+        <div>
+          <div class="cterm">③ EXPLAIN</div>
+          <div class="cdesc">쿼리가 인덱스를 타는지 보는 창 — <code>key</code>(실제 쓴 인덱스), <code>Extra</code>(<code>Using index</code>=커버링 / <code>Using filesort</code>=재정렬)를 확인한다.</div>
+        </div>
+        <div>
+          <div class="cterm">④ filesort</div>
+          <div class="cdesc">인덱스로 <code>ORDER BY</code>를 못 풀면 sort buffer(크면 디스크)에서 다시 정렬. <code>LIMIT 20</code>이어도 매칭 행 <b>전체</b>가 정렬 대상이라 비싸다 → <b>이게 안 뜨게</b> 만드는 게 목표.</div>
+        </div>
+      </div>
+      <div data-a data-d="3">
+        <div class="cmp">
+          <div class="codeblock">
+            <div class="codeblock-title" style="color:var(--danger);">Before · 단독 인덱스</div>
+            <pre>WHERE brand_id=? AND status='ACTIVE'
+ORDER BY like_count DESC
+-- EXPLAIN: Using where; Using filesort</pre>
+          </div>
+          <div class="codeblock">
+            <div class="codeblock-title" style="color:var(--success);">After · 복합 인덱스</div>
+            <pre>CREATE INDEX idx ON t
+  (brand_id, status, like_count DESC, id DESC);
+-- EXPLAIN: Using where  (filesort 제거)</pre>
+          </div>
+        </div>
+        <div class="note"><b>id DESC</b> tie-breaker로 커서(C2)와 호환. 함정 — <code>like_count DESC, id ASC</code>처럼 방향이 어긋나면 filesort 부활.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 4. C2 커서 ===== -->
+<section class="section" id="c2" data-label="C2 커서">
+  <div class="wrap">
+    <span class="phase-tag" style="background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);">PART 1 · 쿼리</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">C2 · 깊은 페이지가 느린 offset, 커서로 해결</h2>
+    <div class="kw-row" data-a data-d="1">
+      <span class="kw">offset 비용</span><span class="kw">커서(keyset) 페이징</span><span class="kw">튜플 비교</span><span class="kw">tie-breaker</span>
+    </div>
+    <div class="split">
+      <div class="concept" data-a data-d="2">
+        <div>
+          <div class="cterm">offset의 비용</div>
+          <div class="cdesc"><code>LIMIT 100000, 20</code>은 앞 10만 행을 <b>실제로 읽어 센 뒤 버린다</b>. 스킵이 공짜가 아니라 <code>O(offset)</code>. 페이지 넘기는 사이 행이 밀리면 중복/누락도 생긴다.</div>
+        </div>
+        <div>
+          <div class="cterm">커서(keyset) 페이징</div>
+          <div class="cdesc">"마지막으로 본 행의 키"를 다음 쿼리의 <code>WHERE</code> 조건으로 쓴다. offset 없이 인덱스 레인지로 바로 진입 → <b>깊이와 무관하게 일정 비용</b>. 단 임의 페이지 점프는 불가.</div>
+        </div>
+        <div>
+          <div class="cterm">튜플 비교 + tie-breaker</div>
+          <div class="cdesc"><code>(like_count, id) &lt; (42, 1080)</code> 행 값 비교가 C1 복합 인덱스와 맞물려 레인지 스캔 한 번. <code>id</code>는 같은 정렬값 사이 순서를 고정하는 보조 키.</div>
+        </div>
+      </div>
+      <div data-a data-d="3">
+        <div class="duo">
+          <div class="bigstat bad">
+            <div class="tag">OFFSET 100000, 20</div>
+            <div class="n">100,020</div>
+            <div class="sub">행 읽고 10만 개 버림</div>
+          </div>
+          <div class="vs-arrow">▶</div>
+          <div class="bigstat good">
+            <div class="tag">커서</div>
+            <div class="n">20</div>
+            <div class="sub">행만 읽음</div>
+          </div>
+        </div>
+        <div class="note">적용 범위를 한정하는 게 포인트 — 앞으로만 가는 목록은 커서, "N페이지 점프"가 필요한 관리 화면은 offset 유지.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 6. C3 캐싱 (PART 2) ===== -->
+<section class="section" id="c3" data-label="C3 캐싱">
+  <div class="wrap">
+    <span class="phase-tag" style="background:color-mix(in srgb,var(--cyan) 16%,transparent);color:var(--cyan);">PART 2 · 캐싱</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">C3 · 같은 질문은 캐시로</h2>
+    <div class="kw-row" data-a data-d="1">
+      <span class="kw">cache-aside</span><span class="kw">write-through</span><span class="kw">write-behind</span><span class="kw">무효화 evict/TTL</span>
+    </div>
+    <p class="section-subtitle" data-a data-d="1" style="margin-bottom:18px;">읽기는 대개 cache-aside로 같지만, <b>쓰기를 어떻게 반영하느냐</b>가 갈린다.</p>
+    <div class="split">
+      <div class="concept" data-a data-d="2">
+        <div>
+          <div class="cterm">cache-aside <span class="badge">이 프로젝트</span></div>
+          <div class="cdesc">앱이 직접 다룬다. 읽기 — 캐시 먼저, miss면 DB 후 적재. 쓰기 — <b>DB 갱신 후 캐시 무효화</b>(evict/TTL). 가장 흔하다.</div>
+        </div>
+        <div>
+          <div class="cterm">write-through</div>
+          <div class="cdesc">쓰기가 <b>캐시를 거쳐 DB로</b> 같이 간다. 캐시·DB가 항상 일치(강한 일관성). 대신 쓰기마다 두 곳을 써서 느리다.</div>
+        </div>
+        <div>
+          <div class="cterm">write-behind <span style="color:var(--muted-fg);">(write-back)</span></div>
+          <div class="cdesc">쓰기는 <b>캐시에만 먼저</b>, DB는 나중에 비동기로 모아서. 쓰기 가장 빠름. 대신 반영 전 장애 시 <b>유실 위험</b>.</div>
+        </div>
+      </div>
+      <div data-a data-d="3">
+        <div class="card" style="padding:0;overflow:hidden;">
+          <table class="dtable">
+            <thead><tr><th>전략</th><th>일관성</th><th>쓰기</th><th>위험</th></tr></thead>
+            <tbody>
+              <tr><td style="font-weight:700;">cache-aside</td><td>보통 <span style="color:var(--muted-fg);">(잠깐 stale)</span></td><td style="color:var(--success);">빠름</td><td>무효화 누락</td></tr>
+              <tr><td style="font-weight:700;">write-through</td><td style="color:var(--success);">강 (항상 일치)</td><td style="color:var(--danger);">느림</td><td>—</td></tr>
+              <tr><td style="font-weight:700;">write-behind</td><td style="color:var(--danger);">약 (지연)</td><td style="color:var(--success);font-weight:700;">가장 빠름</td><td>장애 시 유실</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note">이 프로젝트는 <b>cache-aside</b> — DB 갱신 후 무효화(상세·참조는 evict, 목록은 키 조합이 무한해 짧은 TTL). 강한 일관성보다 <b>단순성·읽기 성능</b>을 택한 선택.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 7. C4 장애 격리 ===== -->
+<section class="section" id="c4" data-label="C4 장애격리">
+  <div class="wrap">
+    <span class="phase-tag" style="background:color-mix(in srgb,var(--cyan) 16%,transparent);color:var(--cyan);">PART 2 · 캐싱</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">C4 · 캐시가 죽어도 서비스는 산다</h2>
+    <div class="kw-row" data-a data-d="1">
+      <span class="kw">graceful degradation</span><span class="kw">fallback</span><span class="kw">fail-open vs fail-closed</span><span class="kw">Master/Replica</span>
+    </div>
+    <div class="split">
+      <div class="concept" data-a data-d="2">
+        <div>
+          <div class="cterm">graceful degradation</div>
+          <div class="cdesc">일부 구성요소가 죽어도 전체가 멈추지 않고 기능/성능만 일부 떨어지는 설계. 캐시를 도입하면 캐시가 <b>새 의존성</b>이 되므로, 그 장애를 서비스 장애와 분리해야 한다.</div>
+        </div>
+        <div>
+          <div class="cterm">fail-open vs fail-closed</div>
+          <div class="cdesc">같은 "실패 처리"라도 방향이 정반대. <b>보조 장치</b>(캐시)는 실패 시 통과(fail-open), <b>게이트</b>(인증·결제)는 실패 시 차단(fail-closed)이 맞다.</div>
+        </div>
+        <div>
+          <div class="cterm">읽기 분산</div>
+          <div class="cdesc">읽기는 Replica, 쓰기는 Master로 부하 분산. 대신 복제 지연(lag)으로 방금 쓴 값을 곧장 못 읽을 수 있다(캐시 특성상 보통 허용).</div>
+        </div>
+      </div>
+      <div data-a data-d="3">
+        <div class="versus">
+          <div class="vbox good">
+            <h4>fail-open</h4>
+            <div class="vsub">실패 시 통과</div>
+            <p>캐시·추천·랭킹. Redis가 죽어도 DB로 fallback → 느려질 뿐 안 멈춤.</p>
+          </div>
+          <div class="vbox bad">
+            <h4>fail-closed</h4>
+            <div class="vsub">실패 시 차단</div>
+            <p>인증·권한·결제. 불확실하면 거부 — 통과시키면 사고.</p>
+          </div>
+        </div>
+        <div class="codeblock" style="margin-top:14px;">
+          <div class="codeblock-title" style="color:var(--cyan);">캐시 = fail-open</div>
+          <pre data-code="c4" data-lang="kotlin"></pre>
+        </div>
+        <div class="note warn">실패를 조용히 삼키므로 <b>반드시 로그로 가시화</b> — 안 그러면 "왜 느려졌지?"를 못 찾는다.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 7b. C4 Digging ===== -->
+<section class="section deep" id="c4-deep" data-label="C4 ⊕ 결정·구현">
+  <div class="wrap">
+    <span class="phase-tag deep-tag">C4 ⊕ 의사결정 &amp; 구현</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">fail-open을 어떻게 강제했나</h2>
+    <div class="split">
+      <div data-a data-d="1">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:10px;">의사결정 · D37 · D41</div>
+        <div class="decision">
+          <div class="opt"><span class="mark">A</span>@Cacheable — Redis 예외 시 메서드 전체 실패</div>
+          <div class="opt pick"><span class="mark">✓</span>try-catch → null 반환 → 호출부 DB fallback</div>
+        </div>
+        <div style="margin-top:16px;font-size:13px;line-height:1.7;">
+          <div style="margin-bottom:7px;"><b style="color:var(--accent);">근거 1</b> — 캐시는 보조 장치 → 죽어도 서비스는 DB로 굴러가야 함(fail-open)</div>
+          <div style="margin-bottom:7px;"><b style="color:var(--accent);">근거 2</b> — 읽기 redisTemplate(Replica) / 쓰기 masterRedisTemplate(Master) 분리</div>
+        </div>
+        <div class="note warn" style="margin-top:14px;">실패를 삼키므로 <code>log.warn</code>으로 반드시 가시화 — 안 그러면 "왜 느려졌지?"의 원인을 못 찾는다.</div>
+      </div>
+      <div data-a data-d="2">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:10px;">실제 구현 · ProductCacheStoreImpl</div>
+        <div class="codeblock">
+          <div class="codeblock-title" style="color:var(--accent);">Master/Replica 분리 + fail-open</div>
+          <pre data-code="c4q" data-lang="kotlin"></pre>
+        </div>
+        <div class="note">Replica 복제 지연(lag)으로 방금 쓴 값을 곧장 못 읽을 수 있으나, 캐시 특성상 허용.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 캐시 훅 · 무조건 빠를까 ===== -->
+<section class="section deep" id="cache-cost" data-label="캐시 트레이드오프">
+  <div class="wrap">
+    <span class="phase-tag deep-tag">PART 2 · 캐시의 대가</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">캐시 도입의 트레이드오프</h2>
+    <p class="section-subtitle" data-a data-d="1">캐시는 저장소(상태)가 하나 더 느는 것 — 공짜가 아니다.</p>
+    <div class="split">
+      <div data-a data-d="2">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:12px;">늘어난 저장소의 비용</div>
+        <div class="cterm">일관성</div>
+        <div class="cdesc" style="margin-bottom:12px;">원본과 캐시가 어긋난다(stale). 무효화(evict/TTL)를 어떻게 할지가 따라붙는다 — 캐싱의 가장 어려운 문제.</div>
+        <div class="cterm">미스 페널티</div>
+        <div class="cdesc" style="margin-bottom:12px;">미스면 <b>캐시 조회 + DB 조회 + 캐시 적재</b>를 다 한다 → 히트율이 낮으면 오히려 느려진다. 캐시는 히트율이 전제.</div>
+        <div class="cterm">메모리·eviction</div>
+        <div class="cdesc">캐시도 유한한 자원 → LRU/LFU 같은 퇴출 정책 필요. 무한히 담을 수 없다.</div>
+      </div>
+      <div data-a data-d="3">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:12px;">캐시 특유의 두 고질병</div>
+        <div class="vbox bad" style="margin-bottom:14px;">
+          <h4>캐시 스탬피드</h4>
+          <div class="vsub">thundering herd</div>
+          <p>인기 키가 <b>만료되는 그 순간</b> 수백 요청이 동시에 미스 → 전부 DB로 몰린다.</p>
+        </div>
+        <div class="vbox bad">
+          <h4>콜드 스타트</h4>
+          <div class="vsub">cold cache</div>
+          <p>배포·Redis 재시작 직후 <b>캐시가 비어</b> 모든 요청이 미스 → DB 폭주.</p>
+        </div>
+        <div class="note">둘 다 "빠르게 접근하려" 만든 캐시가 오히려 DB를 무너뜨리는 역설 → 그래서 캐시엔 <b>전략</b>이 필요하다.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 캐시 스탬피드 ===== -->
+<section class="section deep" id="cache-stampede" data-label="캐시 스탬피드">
+  <div class="wrap">
+    <span class="phase-tag deep-tag">PART 2 · 캐시 스탬피드</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">캐시 스탬피드 — 만료 순간의 폭주</h2>
+    <div class="split">
+      <div data-a data-d="1">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:12px;">문제와 전략</div>
+        <div class="cterm">문제</div>
+        <div class="cdesc" style="margin-bottom:13px;">인기 키 하나가 만료되는 순간, 그 키를 기다리던 수백 요청이 <b>동시에 미스</b> → 전부 DB로(thundering herd). 캐시가 있어도 만료 타이밍에 DB가 출렁인다.</div>
+        <div class="cterm">전략 1 · 지터(jitter)</div>
+        <div class="cdesc" style="margin-bottom:13px;">TTL에 랜덤을 더해 만료 시각을 <b>흩어준다</b>. 인기 키들이 같은 순간에 동시 만료되는 것을 막는다.</div>
+        <div class="cterm">전략 2 · 싱글플라이트</div>
+        <div class="cdesc">같은 키 동시 요청 중 <b>1개만 DB를 치고</b>, 나머지는 그 결과를 기다린다. Go의 <code>singleflight</code>가 대표적 — 직접 구현 가능.</div>
+      </div>
+      <div data-a data-d="2">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:12px;">구현한다면 · code level</div>
+        <div class="codeblock" style="margin-bottom:12px;">
+          <div class="codeblock-title" style="color:var(--cyan);">① 지터 TTL</div>
+          <pre data-code="cw_jitter" data-lang="kotlin"></pre>
+        </div>
+        <div class="codeblock">
+          <div class="codeblock-title" style="color:var(--cyan);">② 싱글플라이트 (Go singleflight 직접 구현)</div>
+          <pre data-code="cw_single" data-lang="kotlin"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 콜드 스타트 ===== -->
+<section class="section deep" id="cache-coldstart" data-label="콜드 스타트">
+  <div class="wrap">
+    <span class="phase-tag deep-tag">PART 2 · 콜드 스타트</span>
+    <h2 class="section-title" data-a style="margin-top:10px;">콜드 스타트 — 빈 캐시의 첫 순간</h2>
+    <div class="split">
+      <div data-a data-d="1">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:12px;">문제와 전략</div>
+        <div class="cterm">문제</div>
+        <div class="cdesc" style="margin-bottom:13px;">배포·스케일아웃·Redis 재시작 직후엔 캐시가 텅 비어 있다 → <b>모든 요청이 미스</b> → 트래픽이 그대로 DB로 쏟아진다. 가장 바쁜 오픈 직후에 가장 위험.</div>
+        <div class="cterm">전략 1 · 워밍업(pre-warm)</div>
+        <div class="cdesc" style="margin-bottom:13px;">오픈 전에 운영자/스크립트가 <b>인기 데이터를 미리 적재</b>한다. 트래픽이 들어오기 전에 캐시를 데워둔다.</div>
+        <div class="cterm">전략 2 · 싱글플라이트</div>
+        <div class="cdesc">워밍업이 못 덮은 키도, 동시 미스를 <b>1회 로딩으로 묶어</b> DB 폭주를 완화한다(스탬피드와 같은 도구).</div>
+        <div class="note" style="margin-top:13px;">랭킹처럼 <b>기간 단위로 리셋</b>되는 콜드 스타트는 전일 점수 일부를 이월(carry-over)해 따로 대응 — 같은 문제, 다른 결.</div>
+      </div>
+      <div data-a data-d="2">
+        <div style="font-size:12px;font-weight:800;color:var(--muted-fg);letter-spacing:0.04em;margin-bottom:12px;">구현한다면 · code level</div>
+        <div class="codeblock">
+          <div class="codeblock-title" style="color:var(--cyan);">워밍업 — ApplicationRunner로 오픈 전 적재</div>
+          <pre data-code="cw_warm" data-lang="kotlin"></pre>
+        </div>
+        <div class="note">스케일아웃마다 새 인스턴스가 콜드 → 워밍업을 부팅 훅에 두거나, Redis를 공유 캐시로 두면 인스턴스 추가의 콜드 영향을 줄인다.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="summary" data-label="핵심 정리">
+  <div class="wrap">
+    <h2 class="section-title" data-a>그래서, 왜 느렸나</h2>
+    <p class="section-subtitle" data-a data-d="1">카드를 클릭 — DB가 왜 느렸고, 어떻게 풀었나</p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px;" data-a data-d="2">
+      <div class="flip" onclick="this.classList.toggle('on')">
+        <div class="flip-inner">
+          <div class="flip-f"><div style="font-size:12px;font-weight:800;color:var(--fg);margin-bottom:8px;">토대 · 왜 느린가</div><div style="font-size:17px;font-weight:800;">느린 계층을 덜 건드려라</div></div>
+          <div class="flip-b"><div style="font-size:13px;line-height:1.6;">DB는 디스크 본체 + 네트워크 왕복 + 쿼리 실행이라 느리다. 읽기 최적화 = 느린 계층을 덜 건드리는 일.</div></div>
+        </div>
+      </div>
+      <div class="flip" onclick="this.classList.toggle('on')">
+        <div class="flip-inner">
+          <div class="flip-f"><div style="font-size:12px;font-weight:800;color:var(--accent);margin-bottom:8px;">PART 1 · 쿼리</div><div style="font-size:17px;font-weight:800;">DB가 덜 일하게</div></div>
+          <div class="flip-b"><div style="font-size:13px;line-height:1.6;">인덱스·커서로 filesort·deep offset을 제거 — DB가 디스크를 덜 읽게.</div></div>
+        </div>
+      </div>
+      <div class="flip" onclick="this.classList.toggle('on')">
+        <div class="flip-inner">
+          <div class="flip-f"><div style="font-size:12px;font-weight:800;color:var(--cyan);margin-bottom:8px;">PART 2 · 캐싱</div><div style="font-size:17px;font-weight:800;">같은 질문은 캐시로</div></div>
+          <div class="flip-b"><div style="font-size:13px;line-height:1.6;">단 fallback(fail-open)·무효화(evict/TTL)·트레이드오프(stale)를 한 세트로.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 15. Q&A ===== -->
+<section class="section" id="qa" data-label="Q&A">
+  <div class="wrap" style="text-align:center;">
+    <h2 data-a style="font-size:clamp(2rem,5vw,3.2rem);font-weight:800;letter-spacing:-0.03em;margin-bottom:16px;">Q&amp;A</h2>
+    <p data-a data-d="1" style="font-size:clamp(15px,2vw,18px);color:var(--muted-fg);max-width:560px;margin:0 auto 32px;">
+      DB는 왜 느릴까? — 쿼리와 캐싱으로 푼다
+    </p>
+    <div data-a data-d="2" style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;max-width:720px;margin:0 auto;">
+      <span class="kw">메모리 계층</span><span class="kw">filesort</span><span class="kw">복합 인덱스</span><span class="kw">커서 페이징</span><span class="kw">cache-aside</span><span class="kw">fail-open</span><span class="kw">캐시 스탬피드</span><span class="kw">콜드 스타트</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Scripts ===== -->
+<script>
+window.__CODE__ = {
+  cw_jitter: "// 동시 만료(스탬피드) 방지 — TTL에 랜덤 지터를 더한다\nval ttl = BASE_TTL.plusSeconds(Random.nextLong(0, JITTER_SEC))\nmaster.opsForValue().set(key, value, ttl)\n// 인기 키들이 '같은 순간'에 만료되지 않게 흩어준다",
+  cw_single: "// 쓰는 쪽 — 캐시 미스가 동시에 몰려도 같은 키는 DB를 1번만 친다\nfun getProduct(id: Long): Product {\n    cache.get(id)?.let { return it }          // 1) 캐시 히트면 끝\n    return singleFlight.run(\"product:$id\") {   // 2) 미스 → 같은 키는 1팀으로 묶임\n        repo.findById(id).also { cache.put(id, it) }   // 대표 1명만 DB→캐시 적재\n    }\n}\n\n// 구현 — 진행 중인 같은 키 호출을 하나로 합친다\nclass SingleFlight<V> {\n    private val calls = ConcurrentHashMap<String, CompletableFuture<V>>()\n    fun run(key: String, loader: () -> V): V =\n        calls.computeIfAbsent(key) {       // 첫 호출만 이 블록 실행, 나머진 같은 걸 받음\n            CompletableFuture.supplyAsync(loader)\n                .whenComplete { _, _ -> calls.remove(key) }   // 끝나면 정리\n        }.join()                            // 첫 호출도 뒤따라온 호출도 같은 결과를 대기\n}",
+  cw_warm: "// 콜드 스타트 방지 — 오픈 전 인기 데이터를 미리 적재(pre-warm)\n@Component\nclass CacheWarmer(...) : ApplicationRunner {\n    override fun run(args: ApplicationArguments) {\n        popularProductIds().forEach { id ->\n            cacheStore.put(id, productService.getProduct(id))\n        }\n    }\n}",
+  c4q: "class ProductCacheStoreImpl(\n    val redisTemplate: RedisTemplate<String, String>,        // 읽기(Replica)\n    @Qualifier(REDIS_TEMPLATE_MASTER)\n    val masterRedisTemplate: RedisTemplate<String, String>,  // 쓰기/evict(Master)\n) {\n    // 모든 접근 try-catch → 실패 시 null (fail-open)\n    // 읽기는 redisTemplate, put/evict만 masterRedisTemplate\n}",
+  c4: "override fun get(id: Long): View? = try {\n    cache.get(\"$KEY$id\")?.let { decode(it) }\n} catch (e: Exception) {\n    log.warn(\"cache miss-fallback (id={})\", id, e)\n    null   // fail-open: 캐시 죽어도 DB로\n}",
+};
+</script>
+<script>
+/* ---- highlight.js ---- */
+(function() {
+  'use strict';
+  var LANGS = {
+    kotlin: {
+      kw: new Set(['fun','val','var','return','suspend','try','catch','class','object','data','sealed','enum','when','if','else','for','while','do','in','is','as','by','companion','override','private','public','protected','internal','abstract','open','final','import','package','typealias','interface','throw','null','true','false','this','super','it']),
+      ty: new Set(['String','Int','Long','Double','Float','Boolean','Unit','Any','List','Map','Set','View','Result','RedisTemplate','Duration','Exception'])
+    }
+  };
+  var TOKEN_RE = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|[a-zA-Z_@]\w*|\d+(?:\.\d+)?|[{}()\[\]<>.,;:=+\-*\/?!&|]+|\s+/g;
+  function renderCode(pre, code, lang) {
+    pre.textContent = '';
+    var dict = LANGS[lang] || LANGS.kotlin;
+    var kwSet = dict.kw, tySet = dict.ty;
+    var lines = code.split('\n');
+    lines.forEach(function(line, li) {
+      if (li > 0) pre.appendChild(document.createTextNode('\n'));
+      var trimmed = line.trimStart();
+      if (trimmed.startsWith('//') || trimmed.startsWith('#')) {
+        var indent = line.slice(0, line.length - trimmed.length);
+        if (indent) pre.appendChild(document.createTextNode(indent));
+        span(pre, trimmed, '--sc', true);
+        return;
+      }
+      var main = line, comment = '';
+      var ci = line.indexOf('//');
+      if (ci >= 0) { main = line.slice(0, ci); comment = line.slice(ci); }
+      var tokens = main.match(TOKEN_RE) || [];
+      for (var i = 0; i < tokens.length; i++) {
+        var t = tokens[i];
+        if (t.startsWith('"') || t.startsWith("'") || t.startsWith('`')) { span(pre, t, '--ss'); }
+        else if (t.startsWith('@')) { span(pre, t, '--snum'); }
+        else if (kwSet.has(t)) { span(pre, t, '--sk', false, true); }
+        else if (tySet.has(t)) { span(pre, t, '--st'); }
+        else if (/^\d/.test(t)) { span(pre, t, '--snum'); }
+        else if (/^[a-zA-Z_]\w*$/.test(t) && tokens[i+1] && tokens[i+1].startsWith('(')) { span(pre, t, '--sn'); }
+        else if (/^[{}()\[\]<>.,;:=+\-*\/?!&|]+$/.test(t)) { span(pre, t, '--so'); }
+        else { pre.appendChild(document.createTextNode(t)); }
+      }
+      if (comment) { span(pre, comment, '--sc', true); }
+    });
+  }
+  function span(parent, text, colorVar, italic, bold) {
+    var s = document.createElement('span');
+    s.style.color = 'var(' + colorVar + ')';
+    if (italic) s.style.fontStyle = 'italic';
+    if (bold) s.style.fontWeight = '500';
+    s.textContent = text;
+    parent.appendChild(s);
+  }
+  document.querySelectorAll('pre[data-code]').forEach(function(pre) {
+    var key = pre.dataset.code;
+    var lang = pre.dataset.lang || 'kotlin';
+    var code = (window.__CODE__ && window.__CODE__[key]) || '';
+    if (code) renderCode(pre, code, lang);
+  });
+  window.renderCode = renderCode;
+})();
+</script>
+<script>
+/* ---- animations.js ---- */
+(function() {
+  'use strict';
+  var prog = document.getElementById('progress');
+  if (prog) {
+    window.addEventListener('scroll', function() {
+      var p = window.scrollY / (document.documentElement.scrollHeight - innerHeight);
+      prog.style.transform = 'scaleX(' + Math.min(p, 1) + ')';
+    }, { passive: true });
+  }
+  var nav = document.getElementById('nav');
+  if (nav) {
+    var secs = document.querySelectorAll('section[id]');
+    var dots = [];
+    secs.forEach(function(sec) {
+      var d = document.createElement('div');
+      d.className = 'dot'; d.dataset.t = sec.id;
+      var l = document.createElement('span');
+      l.className = 'label'; l.textContent = sec.dataset.label || sec.id;
+      d.appendChild(l); nav.appendChild(d);
+      d.addEventListener('click', function() { sec.scrollIntoView({ behavior: 'smooth' }); });
+      dots.push(d);
+    });
+    var navObs = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) {
+        if (e.isIntersecting) {
+          dots.forEach(function(d) { d.classList.remove('active'); });
+          var active = nav.querySelector('[data-t="' + e.target.id + '"]');
+          if (active) active.classList.add('active');
+        }
+      });
+    }, { threshold: 0.2 });
+    secs.forEach(function(s) { navObs.observe(s); });
+  }
+  var fadeObs = new IntersectionObserver(function(entries) {
+    entries.forEach(function(e) {
+      if (e.isIntersecting) { e.target.classList.add('v'); fadeObs.unobserve(e.target); }
+    });
+  }, { threshold: 0.08 });
+  document.querySelectorAll('[data-a]').forEach(function(el) { fadeObs.observe(el); });
+  var grids = document.querySelectorAll('[data-stagger]');
+  if (grids.length) {
+    var gridObs = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) {
+        if (e.isIntersecting) {
+          e.target.querySelectorAll('.svc').forEach(function(s, i) {
+            setTimeout(function() { s.classList.add('v'); }, i * 100);
+          });
+          gridObs.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.2 });
+    grids.forEach(function(g) { gridObs.observe(g); });
+  }
+  var typer = document.getElementById('typer');
+  if (typer) {
+    var txt = typer.dataset.text || '';
+    var speed = parseInt(typer.dataset.speed) || 40;
+    var cursorEl = document.getElementById('typer-cursor');
+    var idx = 0;
+    (function type() {
+      if (idx < txt.length) { typer.textContent += txt[idx++]; setTimeout(type, speed); }
+      else if (cursorEl) { setTimeout(function() { cursorEl.style.display = 'none'; }, 2000); }
+    })();
+  }
+})();
+</script>
+
+</body>
+</html>
